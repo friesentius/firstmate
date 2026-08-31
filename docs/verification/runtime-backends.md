@@ -267,7 +267,7 @@ This guard is the refresh command after any harness upgrade; it spends a small n
 ## Commit attribution
 
 Claude Code appends a `Co-Authored-By` trailer to its own git commits by default, which `AGENTS.md` section 1 forbids.
-`bin/fm-spawn.sh` writes the suppression into every claude-harness crewmate and scout worktree, while a secondmate home is a worktree of the firstmate repo itself and inherits the tracked `.claude/settings.json` instead.
+`bin/fm-spawn.sh` writes the suppression into every claude-harness crewmate and scout worktree, while the firstmate primary reads this repo's own tracked `.claude/settings.json` and each secondmate home, being a worktree of that repo, inherits the same tracked file.
 
 ### Which key actually suppresses the trailer
 
@@ -304,7 +304,6 @@ PR body attribution is rendered by a different function than the commit trailer,
 The PR path is `async function KZn(e,t,r,o){let u=D()?o:void 0,d=Je();if(d.attribution?.pr!==void 0)return d.attribution.pr;if(d.includeCoAuthoredBy===!1)return HDt().fire("pr_base"),"";...}` at byte offset 183372238.
 Tracing the exact JSON `fm-spawn` writes, `{"attribution":{"commit":""},"includeCoAuthoredBy":false}`: `d.attribution?.pr` is undefined so the first branch is skipped, `d.includeCoAuthoredBy===!1` is true, and `KZn` returns the empty string.
 So on 2.1.251 the shipped keys suppress the commit co-author trailer via `UZn` and ALSO empty the PR attribution text via `KZn`.
-An earlier version of this record said leaving `attribution.pr` unset kept the PR default; that was wrong because it reasoned only from `UZn`.
 This is an accepted consequence of using `includeCoAuthoredBy=false`, not an open defect: the requirement being enforced is that no agent name appears as a commit co-author, and emptying PR attribution conflicts with nothing that was asked for.
 Setting `attribution.pr` is the lever if PR attribution ever has to be restored, and it is deliberately not set now.
 
@@ -314,14 +313,16 @@ Setting `attribution.pr` is the lever if PR attribution ever has to be restored,
 FM_COMMIT_ATTRIBUTION_LIVE_E2E=1 tests/fm-commit-attribution-live-e2e.test.sh
 ```
 
-PENDING RE-VERIFICATION: the guard was rebuilt on 2026-08-30 around the corrected keys and the de-confounded design below, and the committed guard has not itself been run since.
-Its own output is therefore owed and is deliberately not recorded here.
-The previously recorded output was produced against the old `commitTrailers` settings and the old design, so it is not evidence for the current one and has been removed rather than restated.
-Re-run the command above and record its real output here before merge.
+Observed on 2026-08-31 against the committed guard, on Linux x86_64 with claude 2.1.251 (Claude Code):
 
-Separately from the guard, and not a substitute for it, a manual de-confounded three-cell check was run by hand against the shipped keys on 2026-08-30 with claude 2.1.251.
-It produced a control commit carrying one `Co-Authored-By` trailer, zero trailers with `attribution.commit` empty plus `includeCoAuthoredBy` false, and a custom `attribution.commit` string present in the commit message.
-That is a hand check with the same shape as the guard, not the named command's output, and it does not discharge the re-verification the guard still owes.
+```
+ok - claude (2.1.251 (Claude Code)): fm-spawn settings suppress the commit co-author trailer (control=1 suppressed=0 sentinel=present)
+```
+
+That output is the guard's own, produced by the command above against the settings `fm-spawn` currently generates and the de-confounded design described below.
+
+The guard was also run once with the attribution keys deleted from the generated settings in `bin/fm-spawn.sh`, to confirm it is not a guard that would pass either way.
+It failed there with `not ok - claude 2.1.251 (Claude Code) still emitted 1 co-author trailer(s) with the settings fm-spawn generates`, and `tests/fm-spawn-commit-attribution.test.sh` failed on the same mutation.
 
 The guard runs three cases.
 The vendor mechanism is prompt-mediated by design: on 2.1.251 the attribution text is consumed only by prompt-text builders, which render it as an "End git commit messages with:" instruction, and there is no mechanical append anywhere in the binary.
