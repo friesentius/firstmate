@@ -2626,10 +2626,17 @@ if [ "$KIND" != secondmate ]; then
       # Commit attribution: AGENTS.md section 1 forbids adding an agent name as
       # a commit co-author, but Claude Code appends a Co-Authored-By trailer to
       # its own git commits by default, so the suppression has to be configured
-      # here rather than asked for in the brief. attribution.commitTrailers is
-      # the current key; includeCoAuthoredBy is its deprecated predecessor and
-      # is written alongside it so an older installed Claude still honors the
-      # rule. Both are recognized keys, so neither warns on the other's version.
+      # here rather than asked for in the brief. Two independent keys are
+      # written because they cover different builds of the emission path. On
+      # claude 2.1.251 the trailer text is chosen by one function: an
+      # attribution object carrying a commit or pr value wins outright, so
+      # attribution.commit="" yields an empty commit trailer through the modern
+      # path; otherwise includeCoAuthoredBy=false suppresses it, and that is
+      # the branch 2.1.251 actually takes for a build with neither. Note that
+      # attribution.commitTrailers is accepted by the settings schema and read
+      # by the managed-settings policy normalizer, but is NOT consulted on the
+      # emission path, so it is not written here. attribution.pr is left unset
+      # so PR attribution keeps its own default.
       mkdir -p "$WT/.claude"
       busy_cmd_prefix="$(shell_quote "$FM_ROOT/bin/fm-busy-event.sh") apply $(shell_quote "$STATE_REAL") $(shell_quote "$ID")"
       busy_suffix="--gen $(shell_quote "$BUSY_GEN") --source claude-hook"
@@ -2638,7 +2645,7 @@ if [ "$KIND" != secondmate ]; then
       j_stopfail=$(json_escape "$busy_cmd_prefix idle $busy_suffix --event stop-failure 2>/dev/null || true")
       j_sessionend=$(json_escape "$busy_cmd_prefix idle $busy_suffix --event session-end 2>/dev/null || true")
       cat > "$WT/.claude/settings.local.json" <<EOF
-{"attribution":{"commitTrailers":false},"includeCoAuthoredBy":false,"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"$j_submit"}]}],"Stop":[{"hooks":[{"type":"command","command":"$j_stop"}]}],"StopFailure":[{"hooks":[{"type":"command","command":"$j_stopfail"}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"$j_sessionend"}]}]}}
+{"attribution":{"commit":""},"includeCoAuthoredBy":false,"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"$j_submit"}]}],"Stop":[{"hooks":[{"type":"command","command":"$j_stop"}]}],"StopFailure":[{"hooks":[{"type":"command","command":"$j_stopfail"}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"$j_sessionend"}]}]}}
 EOF
       exclude_path '.claude/settings.local.json'
       ;;

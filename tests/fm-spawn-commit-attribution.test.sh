@@ -7,6 +7,15 @@
 # worktree; a secondmate home is a worktree of the firstmate repo itself, so it
 # inherits the tracked .claude/settings.json instead.
 #
+# Two independent keys carry the suppression. On claude 2.1.251 an attribution
+# object carrying a commit or pr value wins outright on the emission path, so
+# attribution.commit="" empties the commit trailer there, while
+# includeCoAuthoredBy=false is the branch that build actually takes when no
+# such attribution object is present and is what older builds honor.
+# attribution.commitTrailers is schema-accepted and read by the
+# managed-settings policy normalizer but never consulted on the emission path,
+# so it is deliberately not one of the keys asserted here.
+#
 # These tests run the REAL fm-spawn against a fake pane and an isolated git
 # worktree and assert the generated settings carry the suppression, so a future
 # edit to that generated JSON cannot silently drop it. The live proof that the
@@ -59,10 +68,14 @@ test_claude_spawn_suppresses_commit_trailers() {
   assert_present "$CASE_SETTINGS" "claude spawn did not write settings"
   jq -e . "$CASE_SETTINGS" >/dev/null || fail "generated claude settings are not valid JSON"
 
-  jq -e '.attribution.commitTrailers == false' "$CASE_SETTINGS" >/dev/null \
-    || fail "generated claude settings must set attribution.commitTrailers=false"
-  # The deprecated predecessor is written alongside the current key so an older
-  # installed Claude, which does not know attribution, still honors the rule.
+  # The modern attribution path: a commit value present and empty.
+  jq -e '.attribution.commit == ""' "$CASE_SETTINGS" >/dev/null \
+    || fail "generated claude settings must set attribution.commit to the empty string"
+  # PR attribution is a separate default and must not be commandeered here.
+  jq -e '.attribution | has("pr") | not' "$CASE_SETTINGS" >/dev/null \
+    || fail "generated claude settings must leave attribution.pr unset"
+  # The key the installed build actually takes when no attribution object wins,
+  # and the only one older builds understand.
   jq -e '.includeCoAuthoredBy == false' "$CASE_SETTINGS" >/dev/null \
     || fail "generated claude settings must also set includeCoAuthoredBy=false"
 
@@ -101,8 +114,10 @@ test_firstmate_own_settings_suppress_commit_trailers() {
   # secondmate home is a worktree of this same repo and inherits this file.
   local own="$ROOT/.claude/settings.json"
   assert_present "$own" "firstmate's own claude settings are missing"
-  jq -e '.attribution.commitTrailers == false' "$own" >/dev/null \
-    || fail ".claude/settings.json must set attribution.commitTrailers=false"
+  jq -e '.attribution.commit == ""' "$own" >/dev/null \
+    || fail ".claude/settings.json must set attribution.commit to the empty string"
+  jq -e '.attribution | has("pr") | not' "$own" >/dev/null \
+    || fail ".claude/settings.json must leave attribution.pr unset"
   jq -e '.includeCoAuthoredBy == false' "$own" >/dev/null \
     || fail ".claude/settings.json must also set includeCoAuthoredBy=false"
   pass "firstmate's own claude settings suppress the commit co-author trailer"

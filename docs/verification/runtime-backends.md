@@ -268,21 +268,49 @@ This guard is the refresh command after any harness upgrade; it spends a small n
 
 Claude Code appends a `Co-Authored-By` trailer to its own git commits by default, which `AGENTS.md` section 1 forbids.
 `bin/fm-spawn.sh` writes the suppression into every claude-harness crewmate and scout worktree, while a secondmate home is a worktree of the firstmate repo itself and inherits the tracked `.claude/settings.json` instead.
-That suppression was verified on 2026-08-30 against claude 2.1.251 (Claude Code) on Linux x86_64, driving the real binary through two throwaway repositories that differ only in the attribution keys.
+
+### Which key actually suppresses the trailer
+
+This was established on 2026-08-30 by reading the installed claude 2.1.251 (Claude Code) binary on Linux x86_64 at `~/.local/share/claude/versions/2.1.251`, not from the settings documentation.
+The string `Co-Authored-By` occurs at exactly one code offset, inside the single function that decides the trailer text:
+
+```js
+function UZn(){let e=NDt(),t=`Co-Authored-By: ${BZn(at())} <noreply@anthropic.com>`,r=Je(),o=r.attribution;
+  if(o!==void 0&&EEn(o))return{commit:o.commit??t,pr:o.pr??e};
+  if(r.includeCoAuthoredBy===!1)return HDt().fire("attribution_texts"),{commit:"",pr:""};
+  return{commit:t,pr:e}}
+function EEn(e){return e!==void 0&&(e.commit!==void 0||e.pr!==void 0)}
+```
+
+`Je()` is `oS().settings||{}`, the raw merged settings with no normalization applied, so this reads exactly what the settings files contain.
+Two consequences follow, and the second one contradicts the settings documentation.
+
+First, `attribution.commit` set to the empty string satisfies `EEn` and wins outright, and `??` falls back only on null or undefined, so the empty string survives and the commit trailer is empty.
+Leaving `attribution.pr` unset keeps PR attribution on its own default through the `o.pr??e` fallback in this function.
+
+Second, `attribution.commitTrailers` does NOT satisfy `EEn`, which tests only `commit` and `pr`, so it is inert on this path.
+Its seven occurrences in the binary are all off the emission path: the settings schema allowlists (`br`, `Wr`, `Oo`), the managed-settings policy normalizer, the `pt` and `Se` helpers, and one telemetry key.
+A worktree given only `{"attribution":{"commitTrailers":false}}` therefore still gets the trailer on 2.1.251.
+
+`fm-spawn` writes `attribution.commit` and `includeCoAuthoredBy` for this reason, and deliberately does not write `commitTrailers`.
+The two keys cover different builds rather than duplicating each other: `attribution.commit` takes the modern path, while `includeCoAuthoredBy=false` is the branch 2.1.251 falls through to when no attribution object wins and is the only one older builds understand.
+Note that the `includeCoAuthoredBy` branch fires a `tengu_dead_probe_include_coauthored_by` telemetry probe, which reads as instrumentation for its removal, so the `attribution.commit` key is what should survive that removal.
+
+### Live guard
 
 ```sh
 FM_COMMIT_ATTRIBUTION_LIVE_E2E=1 tests/fm-commit-attribution-live-e2e.test.sh
 ```
 
-Observed output:
+PENDING RE-VERIFICATION: the guard was rebuilt on 2026-08-30 around the corrected keys and a de-confounded design, and has not been run since.
+The previously recorded output was produced against the old `commitTrailers` settings and the old design, so it is not evidence for the current one and has been removed rather than restated.
+Re-run the command above and record its real output here.
 
-```text
-ok - claude (2.1.251 (Claude Code)): fm-spawn settings suppress the commit co-author trailer (control=1 suppressed=0)
-```
-
-The control run, using the same generated settings with only the attribution keys deleted, produced exactly one trailer, so the suppressed run's zero is a real difference rather than a vendor that had stopped emitting trailers.
-`attribution.commitTrailers` is the current key on 2.1.251; the schema still accepts `includeCoAuthoredBy` and describes it as deprecated in favor of `attribution`, so `fm-spawn` writes both and an older installed Claude that predates `attribution` still honors the rule.
-Unrecognized settings keys were observed to be tolerated silently in this version, so the deprecated key costs no diagnostic noise on a build that has moved on.
+The guard runs three cases, and its design answers a confound the first version could not.
+Supplying the settings inside the repository the agent commits in cannot distinguish harness-level suppression from the model reading the file and complying voluntarily, so the settings are now passed from outside that repository through claude's `--settings` flag and no `.claude/settings.local.json` is left in the agent's working tree.
+The control case deletes the attribution keys and must still produce exactly one real trailer, so a vendor that stopped emitting trailers is reported rather than passing vacuously.
+The suppressed case uses the generated settings verbatim and must produce zero.
+The sentinel case sets `attribution.commit` to a token generated at run time that reaches claude only through `--settings`, and requires that exact token in the resulting commit message, which proves the harness composed the trailer text from the settings because the agent never saw the token.
 
 The trailer is model-discretionary rather than mechanical: a run given an exact commit message omitted it while a run asked to choose its own message emitted it, which is why the guard's control uses the second shape.
 No other supported harness has a verified equivalent key.
