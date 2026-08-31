@@ -531,6 +531,12 @@ test_home_seed_no_projects_end_to_end() {
   meta="$home/state/fdev.meta"
   assert_grep 'kind=secondmate' "$meta" "project-less spawn meta lost kind=secondmate"
   assert_grep "home=$sub_abs" "$meta" "project-less spawn meta lost the subhome"
+  # The commit-attribution record convention reads an absent field as an
+  # installed backstop, and the deterministic backstop does not cover secondmate
+  # homes, so the record has to say so rather than stay silent
+  # (docs/verification/runtime-backends.md owns the coverage).
+  assert_grep 'commit_attribution_backstop=unsupported' "$meta" \
+    "a secondmate record must state that the deterministic backstop does not cover it"
   proj_val=$(grep '^projects=' "$meta" | head -1 | cut -d= -f2-)
   [ -z "$proj_val" ] || fail "project-less spawn recorded a non-empty projects meta: '$proj_val'"
   pass "home seeding scaffolds, registers, and spawns a project-less home end to end"

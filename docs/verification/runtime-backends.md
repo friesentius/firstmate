@@ -340,10 +340,12 @@ Reading `git config --local --get core.hooksPath` is what avoids this, because t
 The deterministic backstop covers crewmate and scout task worktrees only.
 Secondmate agents get the advisory settings layer alone, through the tracked `.claude/settings.json` their home inherits, and that is the layer measured leaking above.
 So the gap is real rather than covered, and it is tracked separately as `fm-suppress-co-author-secondmates` rather than closed here.
+A secondmate task record says so in its own `commit_attribution_backstop=unsupported` field rather than staying silent, because the field's absence means an installed backstop and a silent record would claim one that was never there.
 
 A task worktree can also end up without the backstop when the install refuses, which it does on repository layouts unrelated to commit attribution.
 `bin/fm-spawn.sh` degrades in that case instead of aborting the spawn, because losing a trailer guard must never cost the ability to dispatch at all.
 The degradation is never silent: the reason is reported on stderr, the task record at `state/<id>.meta` carries `commit_attribution_backstop` and `commit_attribution_backstop_reason`, and the worker's brief is told the no-agent-co-author rule explicitly, since for that task the instruction is the only protection left.
+Both the record field and the brief note are re-derived on every spawn rather than only added once, so a task relaunched into a repaired repository loses a note that no longer holds and one relaunched into a broken repository gains it.
 
 ### Live guard
 

@@ -2553,15 +2553,63 @@ mkdir -p "$TASK_TMP/gotmp"
 mkdir -p "$STATE"
 STATE_REAL=$(cd "$STATE" && pwd -P)
 TURNEND="$STATE_REAL/$ID.turn-ended"
-# Stable heading for the brief note appended when the commit-attribution
-# backstop is unavailable, so a relaunch of the same task cannot stack it up.
+# Delimiters of the brief note that states the no-agent-co-author rule when the
+# commit-attribution backstop is unavailable. The block is delimited at both
+# ends so it can be rewritten in place rather than only appended.
 COMMIT_BACKSTOP_BRIEF_MARKER='## Commit attribution (backstop unavailable)'
+COMMIT_BACKSTOP_BRIEF_END='<!-- end commit-attribution note -->'
+# Every task kind answers for the backstop, including the kinds it does not
+# cover, so an absent record field can never be read as a backstop that is in
+# place. A secondmate home is outside the deterministic layer by design
+# (docs/verification/runtime-backends.md records the coverage and the tracked
+# follow-up); the non-secondmate branch below overwrites this with what its own
+# install actually did.
+COMMIT_BACKSTOP_STATE=unsupported
+COMMIT_BACKSTOP_REASON='secondmate homes are outside the deterministic backstop, which covers crewmate and scout task worktrees only'
 exclude_path() {
   local rel=$1 EXCL
   EXCL=$(git -C "$WT" rev-parse --git-path info/exclude 2>/dev/null || true)
   [ -n "$EXCL" ] || return 0
   mkdir -p "$(dirname "$EXCL")"
   grep -qxF "$rel" "$EXCL" 2>/dev/null || echo "$rel" >> "$EXCL"
+}
+
+# Bring the brief's note in line with what this spawn actually found, in both
+# directions: a task relaunched into a repaired repository loses a note that no
+# longer holds, and one relaunched into a broken repository gains it. Repeated
+# spawns converge on exactly one block or none. A brief that carries no note and
+# needs none is left byte-identical.
+sync_commit_backstop_brief_note() {  # <brief>
+  local brief=$1 tmp
+  [ -f "$brief" ] || return 1
+  if [ "$COMMIT_BACKSTOP_STATE" = installed ] \
+     && ! grep -qF "$COMMIT_BACKSTOP_BRIEF_MARKER" "$brief" 2>/dev/null; then
+    return 0
+  fi
+  tmp="$brief.fm-backstop.${BASHPID:-$$}"
+  awk -v start="$COMMIT_BACKSTOP_BRIEF_MARKER" -v end="$COMMIT_BACKSTOP_BRIEF_END" '
+    BEGIN { skipping = 0; have = 0 }
+    {
+      if (skipping) { if ($0 == end) skipping = 0; next }
+      if ($0 == start) { skipping = 1; if (have && buf == "") have = 0; next }
+      if (have) print buf
+      buf = $0; have = 1
+    }
+    END { if (have) print buf }
+  ' "$brief" > "$tmp" 2>/dev/null || { rm -f -- "$tmp"; return 1; }
+  if [ "$COMMIT_BACKSTOP_STATE" != installed ]; then
+    {
+      printf '\n%s\n' "$COMMIT_BACKSTOP_BRIEF_MARKER"
+      printf 'The deterministic commit-attribution backstop could not be installed in this worktree (%s: %s).\n' \
+        "$COMMIT_BACKSTOP_STATE" "$COMMIT_BACKSTOP_REASON"
+      printf 'Nothing mechanical will remove it for you, so this is on you: never add an agent name as a commit co-author, and never add a Co-Authored-By trailer naming any agent or model to any commit you make.\n'
+      printf '%s\n' "$COMMIT_BACKSTOP_BRIEF_END"
+    } >> "$tmp" || { rm -f -- "$tmp"; return 1; }
+  fi
+  if ! cmp -s -- "$brief" "$tmp"; then
+    cat -- "$tmp" > "$brief" || { rm -f -- "$tmp"; return 1; }
+  fi
+  rm -f -- "$tmp"
 }
 if [ "$RELAUNCH" -eq 1 ]; then
   # Retire the previous incarnation's per-task harness wiring before arming the
@@ -2601,9 +2649,12 @@ if [ "$KIND" != secondmate ]; then
   # protection left.
   COMMIT_BACKSTOP_STATE=installed
   COMMIT_BACKSTOP_REASON=
-  if FM_HOOK_INSTALL_OUT=$("$FM_ROOT/bin/fm-git-hook-install.sh" "$WT" 2>&1); then
-    exclude_path '.fm-git-hooks'
-  else
+  # The installer creates .fm-git-hooks before several of its own failure
+  # exits, so the exclusion has to hold whatever the install does. Excluding a
+  # path that never appears is harmless; leaving it unexcluded lets a partial
+  # install reach a worker's commit and block teardown's dirty check.
+  exclude_path '.fm-git-hooks'
+  if ! FM_HOOK_INSTALL_OUT=$("$FM_ROOT/bin/fm-git-hook-install.sh" "$WT" 2>&1); then
     # Cheap classification only: the installer's own guardrails say "refusing
     # to install", so anything else is an unexpected failure of the installer
     # rather than a deliberate refusal.
@@ -2618,16 +2669,9 @@ if [ "$KIND" != secondmate ]; then
     echo "warning: task $ID is launching WITHOUT the deterministic commit-attribution backstop ($COMMIT_BACKSTOP_STATE): $COMMIT_BACKSTOP_REASON" >&2
     printf '%s\n' "$FM_HOOK_INSTALL_OUT" >&2
     echo "warning: the no-agent-co-author rule is instruction-only for $ID; it is stated in the brief and recorded on the task record" >&2
-    if ! grep -qF "$COMMIT_BACKSTOP_BRIEF_MARKER" "$BRIEF" 2>/dev/null; then
-      {
-        printf '\n%s\n' "$COMMIT_BACKSTOP_BRIEF_MARKER"
-        printf 'The deterministic commit-attribution backstop could not be installed in this worktree (%s: %s).\n' \
-          "$COMMIT_BACKSTOP_STATE" "$COMMIT_BACKSTOP_REASON"
-        printf 'Nothing mechanical will remove it for you, so this is on you: never add an agent name as a commit co-author, and never add a Co-Authored-By trailer naming any agent or model to any commit you make.\n'
-      } >> "$BRIEF" \
-        || echo "warning: could not state the no-agent-co-author rule in $BRIEF for $ID" >&2
-    fi
   fi
+  sync_commit_backstop_brief_note "$BRIEF" \
+    || echo "warning: could not bring the commit-attribution note in $BRIEF up to date for $ID" >&2
 
   # Arm the semantic busy-state contract (bin/fm-busy-lib.sh) for every
   # adapter with a verified semantic source. The launch brief sent below IS a
@@ -3007,10 +3051,12 @@ preserve_relaunch_meta() {
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   # Written only when the deterministic backstop is NOT in place, so the
   # default record stays byte-identical and the field's presence IS the gap.
-  # Re-derived on every spawn (it is in preserve_relaunch_meta's owned list),
-  # so a relaunch into a repaired repository drops it rather than inheriting a
-  # stale answer.
-  if [ "${COMMIT_BACKSTOP_STATE:-installed}" != installed ]; then
+  # Every kind sets the state explicitly, including the secondmate kind the
+  # backstop does not cover, so an absent field means an installed backstop
+  # rather than an unanswered question. Re-derived on every spawn (it is in
+  # preserve_relaunch_meta's owned list), so a relaunch into a repaired
+  # repository drops it rather than inheriting a stale answer.
+  if [ "$COMMIT_BACKSTOP_STATE" != installed ]; then
     echo "commit_attribution_backstop=$COMMIT_BACKSTOP_STATE"
     echo "commit_attribution_backstop_reason=${COMMIT_BACKSTOP_REASON:-unknown}"
   fi

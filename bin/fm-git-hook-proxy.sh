@@ -57,8 +57,8 @@ if awk -v addresses="$FM_AGENT_COAUTHOR_ADDRESSES" '
   BEGIN { n = split(tolower(addresses), agent, /[ \t\n]+/) }
   {
     line = tolower($0)
-    sub(/^[ \t]+/, "", line)
-    sub(/[ \t]+$/, "", line)
+    sub(/^[ \t\r\v\f]+/, "", line)
+    sub(/[ \t\r\v\f]+$/, "", line)
     if (index(line, "co-authored-by:") == 1) {
       for (i = 1; i <= n; i++) {
         if (agent[i] == "") continue

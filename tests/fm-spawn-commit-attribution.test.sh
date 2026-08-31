@@ -39,6 +39,11 @@ set -u
 TMP_ROOT=$(fm_test_tmproot fm-spawn-commit-attribution)
 AGENT_TRAILER='Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>'
 HUMAN_TRAILER='Co-Authored-By: A Human <human@example.com>'
+# The delimiters bin/fm-spawn.sh writes around the degraded-path note. The brief
+# is the generated artifact handed to the worker, so its emitted contract is
+# what these assertions read.
+NOTE_MARKER='## Commit attribution (backstop unavailable)'
+NOTE_END='<!-- end commit-attribution note -->'
 
 # assert_spawned_worktree_strips_agent_trailers <label>: prove the spawn armed a
 # WORKING backstop in the worktree it just prepared, by committing there for
@@ -192,7 +197,111 @@ test_spawn_degrades_when_the_backstop_cannot_be_installed() {
   # installed behind the warning.
   [ -z "$(git -C "$CASE_WT" config --get core.hooksPath 2>/dev/null || true)" ] \
     || fail "the spawn reported no backstop but left a core.hooksPath override behind"
+
+  # Degrading must not dirty the worktree either: a worker's `git add -A` would
+  # otherwise sweep the backstop's own directory into the project's PR.
+  case $(git -C "$CASE_WT" status --porcelain 2>/dev/null) in
+    *.fm-git-hooks*) fail "the degraded spawn left an unexcluded .fm-git-hooks in the worktree" ;;
+  esac
   pass "a refused backstop degrades the spawn loudly and durably instead of aborting it"
+}
+
+test_a_partial_install_does_not_dirty_the_worktree() {
+  # The installer creates .fm-git-hooks and writes into it before several of its
+  # own failure exits, so a mid-install failure leaves the directory behind.
+  # This reproduces the concrete one: a git too old for `config --worktree`,
+  # which fails only after the hooks directory has been populated. The worktree
+  # must still be clean, because teardown refuses on a dirty tree and a worker's
+  # `git add -A` would otherwise sweep the leftovers into the project's PR.
+  local out meta status real_git
+  spawn_case partial-install claude attr-cl-3
+  real_git=$(command -v git)
+  cat > "$CASE_FAKEBIN/git" <<SH
+#!/usr/bin/env bash
+case " \$* " in
+  *" --worktree "*core.hooksPath*)
+    echo "error: unknown option worktree" >&2
+    exit 129
+    ;;
+esac
+exec "$real_git" "\$@"
+SH
+  chmod +x "$CASE_FAKEBIN/git"
+
+  out=$(run_spawn attr-cl-3)
+  expect_code 0 $? "a spawn must still succeed when the backstop install fails: $out"
+  assert_contains "$out" 'spawned attr-cl-3 harness=claude' \
+    "the spawn did not complete after the backstop install failed"
+  assert_contains "$out" 'WITHOUT the deterministic commit-attribution backstop' \
+    "the failed install was not reported"
+
+  meta="$CASE_HOME/state/attr-cl-3.meta"
+  [ "$(fm_meta_get "$meta" commit_attribution_backstop)" = failed ] \
+    || fail "a mid-install failure must be recorded as failed rather than refused"
+
+  # The precondition the assertion depends on: the install really did get far
+  # enough to leave its directory behind.
+  assert_present "$CASE_WT/.fm-git-hooks" \
+    "the case did not reproduce a partial install, so the cleanliness check is vacuous"
+  status=$(git -C "$CASE_WT" status --porcelain 2>/dev/null)
+  case $status in
+    *.fm-git-hooks*) fail "a failed install left an unexcluded .fm-git-hooks in the worktree: $status" ;;
+  esac
+  pass "a partially completed backstop install leaves the task worktree clean"
+}
+
+test_a_stale_brief_note_is_removed_when_the_backstop_returns() {
+  # The dangerous direction. A task that once spawned without the backstop
+  # carries the note; spawned into a healthy repository it must LOSE it, or the
+  # worker is told nothing protects it while the backstop is in fact armed and
+  # the task record correctly says so.
+  local out brief
+  spawn_case stale-note claude attr-cl-4
+  fm_test_spawn_brief "$CASE_HOME" attr-cl-4 "brief for attr-cl-4
+
+$NOTE_MARKER
+The deterministic commit-attribution backstop could not be installed in this worktree (refused: a reason from some earlier spawn).
+Nothing mechanical will remove it for you, so this is on you: never add an agent name as a commit co-author, and never add a Co-Authored-By trailer naming any agent or model to any commit you make.
+$NOTE_END"
+
+  out=$(run_spawn attr-cl-4)
+  expect_code 0 $? "the spawn should succeed: $out"
+  brief="$CASE_HOME/data/attr-cl-4/brief.md"
+  assert_no_grep "$NOTE_MARKER" "$brief" \
+    "a brief must lose the backstop-unavailable note once the backstop installs"
+  assert_no_grep 'a reason from some earlier spawn' "$brief" \
+    "the stale reason from an earlier spawn must not survive"
+  assert_grep 'brief for attr-cl-4' "$brief" \
+    "removing the note must not damage the rest of the brief"
+  [ "$(fm_meta_get "$CASE_HOME/state/attr-cl-4.meta" commit_attribution_backstop)" = "" ] \
+    || fail "the record and the brief disagree about whether the backstop is in place"
+  assert_spawned_worktree_strips_agent_trailers stale-note
+  pass "a stale backstop-unavailable note is dropped once the backstop is back"
+}
+
+test_a_degraded_spawn_rewrites_rather_than_stacks_the_note() {
+  # Converge on exactly one current block: a brief that already carries a note
+  # from an earlier spawn must end up with one note carrying THIS spawn's
+  # reason, never two.
+  local out brief markers
+  spawn_case restated-note claude attr-cl-5
+  fm_test_spawn_brief "$CASE_HOME" attr-cl-5 "brief for attr-cl-5
+
+$NOTE_MARKER
+The deterministic commit-attribution backstop could not be installed in this worktree (failed: a reason from some earlier spawn).
+$NOTE_END"
+  git -C "$CASE_WT" config core.worktree "$CASE_WT"
+
+  out=$(run_spawn attr-cl-5)
+  expect_code 0 $? "the spawn should succeed: $out"
+  brief="$CASE_HOME/data/attr-cl-5/brief.md"
+  markers=$(grep -cF "$NOTE_MARKER" "$brief" || true)
+  [ "$markers" = 1 ] || fail "a degraded relaunch must leave exactly one note, found $markers"
+  assert_no_grep 'a reason from some earlier spawn' "$brief" \
+    "the note must be restated with this spawn's reason, not the previous one"
+  assert_grep 'core.worktree is set' "$brief" \
+    "the restated note must name why this spawn has no backstop"
+  pass "a degraded spawn restates the note in place instead of stacking a second one"
 }
 
 test_firstmate_own_settings_suppress_commit_trailers() {
@@ -213,4 +322,7 @@ test_firstmate_own_settings_suppress_commit_trailers() {
 test_claude_spawn_suppresses_commit_trailers
 test_non_claude_spawn_writes_no_claude_settings
 test_spawn_degrades_when_the_backstop_cannot_be_installed
+test_a_partial_install_does_not_dirty_the_worktree
+test_a_stale_brief_note_is_removed_when_the_backstop_returns
+test_a_degraded_spawn_rewrites_rather_than_stacks_the_note
 test_firstmate_own_settings_suppress_commit_trailers

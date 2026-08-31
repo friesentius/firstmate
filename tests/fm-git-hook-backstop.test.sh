@@ -183,6 +183,36 @@ body that must survive" 'bad[unclosed@example.com' \
   pass "an added address is matched literally and can neither miss its trailer nor blank the message"
 }
 
+test_crlf_message_still_loses_the_agent_trailer() {
+  # A commit message can reach the hook with CRLF endings - git preserves them
+  # under --cleanup=verbatim, and an editor writing CRLF into COMMIT_EDITMSG
+  # does the same - and the trailing \r must not hide the trailer.
+  make_world crlf
+  "$ROOT/bin/fm-git-hook-install.sh" "$TASK_WT" >/dev/null || fail "install failed"
+  local msgfile msg
+  msgfile="$TMP_ROOT/crlf-message.txt"
+  printf 'crlf subject\r\n\r\n%s\r\n%s\r\n' "$HUMAN_TRAILER" "$AGENT_TRAILER" > "$msgfile"
+  # Guard against a vacuous case: the file really has to carry CRLF endings.
+  grep -q "$(printf '\r')" "$msgfile" || fail "the CRLF fixture was written without carriage returns"
+  printf 'x\n' > "$TASK_WT/crlf.txt"
+  git -C "$TASK_WT" add -A
+  git -C "$TASK_WT" commit -q --cleanup=verbatim -F "$msgfile" \
+    || fail "the CRLF commit was rejected"
+  msg=$(git -C "$TASK_WT" log -1 --format='%B')
+  case $msg in
+    *"noreply@anthropic.com"*) fail "a CRLF-terminated agent co-author trailer survived the backstop" ;;
+  esac
+  case $msg in
+    *"$HUMAN_TRAILER"*) : ;;
+    *) fail "the CRLF pass removed a legitimate human co-author" ;;
+  esac
+  case $msg in
+    *"crlf subject"*) : ;;
+    *) fail "the CRLF pass damaged the commit subject" ;;
+  esac
+  pass "a CRLF commit message still loses the agent trailer and keeps a human one"
+}
+
 test_reinstall_never_records_itself() {
   # A pooled worktree slot is reused, so install runs again over its own
   # previous state. If it ever recorded its own directory as the project's
@@ -228,5 +258,6 @@ test_project_hook_still_runs_and_can_reject
 test_primary_checkout_hook_behavior_does_not_leak
 test_relative_worktree_argument_still_arms_the_hook
 test_added_address_is_matched_literally
+test_crlf_message_still_loses_the_agent_trailer
 test_reinstall_never_records_itself
 test_refuses_unsafe_repository_configurations
