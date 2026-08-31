@@ -71,7 +71,11 @@ test_claude_spawn_suppresses_commit_trailers() {
   # The modern attribution path: a commit value present and empty.
   jq -e '.attribution.commit == ""' "$CASE_SETTINGS" >/dev/null \
     || fail "generated claude settings must set attribution.commit to the empty string"
-  # PR attribution is a separate default and must not be commandeered here.
+  # attribution.pr stays unset. On 2.1.251 that does not preserve PR
+  # attribution, because the PR-body path short-circuits on
+  # includeCoAuthoredBy=false and returns empty anyway; it is the lever for
+  # restoring PR attribution later, and this change deliberately leaves it
+  # unpulled rather than pinning a PR string the task never asked for.
   jq -e '.attribution | has("pr") | not' "$CASE_SETTINGS" >/dev/null \
     || fail "generated claude settings must leave attribution.pr unset"
   # The key the installed build actually takes when no attribution object wins,

@@ -272,7 +272,10 @@ Claude Code appends a `Co-Authored-By` trailer to its own git commits by default
 ### Which key actually suppresses the trailer
 
 This was established on 2026-08-30 by reading the installed claude 2.1.251 (Claude Code) binary on Linux x86_64 at `~/.local/share/claude/versions/2.1.251`, not from the settings documentation.
-The string `Co-Authored-By` occurs at exactly one code offset, inside the single function that decides the trailer text:
+`grep -aob 'Co-Authored-By' ~/.local/share/claude/versions/2.1.251` returns two byte offsets, 92343392 and 183369569.
+Only 183369569 is code: it is the template literal inside the single function that decides the trailer text, quoted below.
+92343392 is the same text in the V8 code-cache string table, sitting alongside the other literals this function region uses (`Claude-Session: `, ` <noreply@anthropic.com>`, `attribution_texts`, `includeCoAuthoredBy`).
+`grep -aoc 'function UZn'` and `grep -aoc 'function EEn'` each return 1, so there is one implementation and no second emission site:
 
 ```js
 function UZn(){let e=NDt(),t=`Co-Authored-By: ${BZn(at())} <noreply@anthropic.com>`,r=Je(),o=r.attribution;
@@ -286,17 +289,24 @@ function EEn(e){return e!==void 0&&(e.commit!==void 0||e.pr!==void 0)}
 Two consequences follow, and the second one contradicts the settings documentation.
 
 First, `attribution.commit` set to the empty string satisfies `EEn` and wins outright, and `??` falls back only on null or undefined, so the empty string survives and the commit trailer is empty.
-Leaving `attribution.pr` unset keeps PR attribution on its own default through the `o.pr??e` fallback, but only on builds that take the attribution branch.
-A build that predates the attribution object falls through to `includeCoAuthoredBy===!1`, which returns `{commit:"",pr:""}`, so the fallback key empties the PR attribution text as well and the "End PR bodies with:" prompt section disappears alongside the commit one.
-Independently of that, the dedicated PR-body path `KZn` checks `attribution.pr` first and then short-circuits on `includeCoAuthoredBy===!1`, so on 2.1.251 that path also returns empty while the second key is written.
 
 Second, `attribution.commitTrailers` does NOT satisfy `EEn`, which tests only `commit` and `pr`, so it is inert on this path.
-Its seven occurrences in the binary are all off the emission path: the settings schema allowlists (`br`, `Wr`, `Oo`), the managed-settings policy normalizer, the `pt` and `Se` helpers, and one telemetry key.
+`grep -aob 'commitTrailers'` returns seven offsets, and all of them are off the emission path: the settings schema allowlists (`br`, `Wr`, `Oo`), the managed-settings policy normalizer, the `pt` and `Se` helpers, and one telemetry key.
 A worktree given only `{"attribution":{"commitTrailers":false}}` therefore still gets the trailer on 2.1.251.
 
 `fm-spawn` writes `attribution.commit` and `includeCoAuthoredBy` for this reason, and deliberately does not write `commitTrailers`.
 The two keys cover different builds rather than duplicating each other: `attribution.commit` takes the modern path, while `includeCoAuthoredBy=false` is the branch 2.1.251 falls through to when no attribution object wins and is the only one older builds understand.
 Note that the `includeCoAuthoredBy` branch fires a `tengu_dead_probe_include_coauthored_by` telemetry probe, which reads as instrumentation for its removal, so the `attribution.commit` key is what should survive that removal.
+
+#### What the keys do to PR attribution
+
+PR body attribution is rendered by a different function than the commit trailer, so `UZn`'s `pr` return value is not what decides it.
+The PR path is `async function KZn(e,t,r,o){let u=D()?o:void 0,d=Je();if(d.attribution?.pr!==void 0)return d.attribution.pr;if(d.includeCoAuthoredBy===!1)return HDt().fire("pr_base"),"";...}` at byte offset 183372238.
+Tracing the exact JSON `fm-spawn` writes, `{"attribution":{"commit":""},"includeCoAuthoredBy":false}`: `d.attribution?.pr` is undefined so the first branch is skipped, `d.includeCoAuthoredBy===!1` is true, and `KZn` returns the empty string.
+So on 2.1.251 the shipped keys suppress the commit co-author trailer via `UZn` and ALSO empty the PR attribution text via `KZn`.
+An earlier version of this record said leaving `attribution.pr` unset kept the PR default; that was wrong because it reasoned only from `UZn`.
+This is an accepted consequence of using `includeCoAuthoredBy=false`, not an open defect: the requirement being enforced is that no agent name appears as a commit co-author, and emptying PR attribution conflicts with nothing that was asked for.
+Setting `attribution.pr` is the lever if PR attribution ever has to be restored, and it is deliberately not set now.
 
 ### Live guard
 
