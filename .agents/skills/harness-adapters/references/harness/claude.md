@@ -16,6 +16,8 @@ Busy hooks verified 2026-07-28 on Claude Code 2.1.220.
 Fresh-worktree or first-machine launch may show trust or bypass-permissions confirmation.
 Inspect within about 20 seconds, accept the required choice with `FM_HOME=<active-home> ../../../bin/fm-send.sh <window> --key Enter` unless already bound, and verify instructions started.
 
+Claude Code adds a `Co-Authored-By` commit trailer by default, so the settings `../../../bin/fm-spawn.sh` generates suppress it, and `../../../docs/verification/runtime-backends.md` under "Commit attribution" owns the verified key semantics.
+
 ## Composer ghost
 
 Completed turns can render dim predicted text inside an empty composer, indistinguishable in plain `tmux capture-pane`.
