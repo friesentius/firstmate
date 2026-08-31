@@ -283,6 +283,7 @@ family_for_basename() {
     fm-control.test.sh|fm-control-relaunch.test.sh|\
     fm-herdr-session-cleanup.test.sh|fm-send-resolve-key.test.sh|fm-send-strict.test.sh|\
     fm-send-inbox.test.sh|fm-spawn-batch.test.sh|\
+    fm-git-hook-backstop.test.sh|\
     fm-spawn-commit-attribution.test.sh|fm-spawn-dispatch-profile.test.sh|\
     fm-trace-context-spawn.test.sh|fm-spawn-worktree-settle.test.sh|\
     fm-teardown-endpoint-safety.test.sh)
@@ -1268,6 +1269,12 @@ families_for_changed_path() {
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
       ;;
+    bin/fm-git-hook-install.sh|bin/fm-git-hook-proxy.sh)
+      # The deterministic commit-attribution backstop: its portable guard, and
+      # the live guard that exercises it against the real harness.
+      printf '%s\n' __script__:fm-git-hook-backstop.test.sh
+      printf '%s\n' __script__:fm-commit-attribution-live-e2e.test.sh
+      ;;
     bin/fm-spawn.sh)
       # The commit-attribution live guard runs a real fm-spawn and drives claude
       # with the settings this script generates, so a change here should surface
@@ -1275,6 +1282,7 @@ families_for_changed_path() {
       printf '%s\n' backend-dispatch
       printf '%s\n' pure-contract-unit
       printf '%s\n' __script__:fm-commit-attribution-live-e2e.test.sh
+      printf '%s\n' __script__:fm-git-hook-backstop.test.sh
       ;;
     bin/fm-send.sh|bin/fm-harness.sh|\
     bin/fm-peek.sh|bin/fm-composer*)

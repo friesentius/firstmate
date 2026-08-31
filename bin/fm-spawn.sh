@@ -2576,6 +2576,23 @@ if [ "$RELAUNCH" -eq 1 ]; then
   RELAUNCH_REPLACEMENT_WT=$WT
 fi
 if [ "$KIND" != secondmate ]; then
+  # Deterministic commit-attribution backstop, installed for EVERY harness
+  # because it works at the git layer rather than through any one vendor's
+  # settings. The claude settings written below suppress the trailer only by
+  # omitting an instruction from the model's prompt, which is advisory: the
+  # measured leak is recorded in docs/verification/runtime-backends.md. This
+  # hook is what makes "never add an agent name as a commit co-author"
+  # deterministic rather than usually true. It is scoped to this worktree, it
+  # delegates to the project's own hooks, and it re-derives its state on every
+  # spawn so a reused pooled slot cannot inherit a stale answer
+  # (bin/fm-git-hook-install.sh owns the guards and the exact mechanics).
+  if ! FM_HOOK_INSTALL_OUT=$("$FM_ROOT/bin/fm-git-hook-install.sh" "$WT" 2>&1); then
+    echo "error: could not install the commit-attribution backstop for task $ID" >&2
+    printf '%s\n' "$FM_HOOK_INSTALL_OUT" >&2
+    exit 1
+  fi
+  exclude_path '.fm-git-hooks'
+
   # Arm the semantic busy-state contract (bin/fm-busy-lib.sh) for every
   # adapter with a verified semantic source. The launch brief sent below IS a
   # submitted turn, so the seed record is busy/fm-spawn. The minted gen is

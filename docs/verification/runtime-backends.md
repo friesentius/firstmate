@@ -307,6 +307,28 @@ So on 2.1.251 the shipped keys suppress the commit co-author trailer via `UZn` a
 This is an accepted consequence of using `includeCoAuthoredBy=false`, not an open defect: the requirement being enforced is that no agent name appears as a commit co-author, and emptying PR attribution conflicts with nothing that was asked for.
 Setting `attribution.pr` is the lever if PR attribution ever has to be restored, and it is deliberately not set now.
 
+### The settings alone are advisory, not a guarantee
+
+The mechanism is prompt-mediated, and this is the single most important fact in this record.
+Every consumer of the attribution text in 2.1.251 is a prompt-text builder, rendering it as an `End git commit messages with:` instruction; there is no mechanical append anywhere in the binary.
+`attribution.commit` set to the empty string therefore works by OMITTING that instruction from the system prompt, which leaves the model free to add the trailer from habit anyway.
+
+It does exactly that, at a measurable rate.
+Across six runs of the suppressed configuration on 2026-08-31 with claude 2.1.251, five produced no trailer and one produced a trailer: the live guard failed on its first run and passed on a re-run with byte-identical code.
+So the settings reduce the trailer without eliminating it, and no assertion that the settings alone always suppress it can be both honest and stable.
+
+### Deterministic backstop
+
+`bin/fm-git-hook-install.sh` installs `bin/fm-git-hook-proxy.sh` as the task worktree's `core.hooksPath`, and its `commit-msg` hook strips agent co-author trailers mechanically, independent of what the model does.
+That is what makes the rule deterministic rather than usually true, and it is enforced at the git layer, so it covers every harness and every launch mechanism rather than only claude.
+
+A linked worktree resolves hooks through the SHARED common directory - `git rev-parse --git-path hooks` in a worktree of this repo returns the common `.git/hooks` - so a plain hook file would fire in the captain's own checkout too.
+Per-worktree git config is what keeps it contained, and `tests/fm-git-hook-backstop.test.sh` asserts the primary checkout still emits what the task worktree strips.
+
+Two mechanics are worth recording because both were wrong on the first attempt and only testing caught them.
+`git rev-parse --git-path hooks` resolves THROUGH `core.hooksPath`, so once the backstop is installed it reports the backstop's own directory; deriving the project's original hooks directory from it makes a reinstall record itself and silently sever delegation to the project's hooks.
+Reading `git config --local --get core.hooksPath` is what avoids this, because the backstop's own value lives in the worktree scope and never appears in the local scope.
+
 ### Live guard
 
 ```sh
@@ -316,26 +338,24 @@ FM_COMMIT_ATTRIBUTION_LIVE_E2E=1 tests/fm-commit-attribution-live-e2e.test.sh
 Observed on 2026-08-31 against the committed guard, on Linux x86_64 with claude 2.1.251 (Claude Code):
 
 ```
-ok - claude (2.1.251 (Claude Code)): fm-spawn settings suppress the commit co-author trailer (control=1 suppressed=0 sentinel=present)
+ok - claude (2.1.251 (Claude Code)): the backstop deterministically removes the commit co-author trailer (control=1 settings-only=0 backstop=0 sentinel=present)
 ```
 
-That output is the guard's own, produced by the command above against the settings `fm-spawn` currently generates and the de-confounded design described below.
+The guard runs four cases and asserts three of them.
+The control must emit at least one real trailer, so a vendor that stopped emitting them is reported rather than passed vacuously.
+The settings-only count is recorded but deliberately NOT asserted, because that path is the advisory one measured leaking above and a hard assertion on it would fail intermittently for a reason the backstop already covers.
+The backstop case is the hard assertion and must be zero, because that configuration is what production actually gets.
+The sentinel case sets `attribution.commit` to a run-time token and requires it in the commit message.
 
-The guard was also run once with the attribution keys deleted from the generated settings in `bin/fm-spawn.sh`, to confirm it is not a guard that would pass either way.
-It failed there with `not ok - claude 2.1.251 (Claude Code) still emitted 1 co-author trailer(s) with the settings fm-spawn generates`, and `tests/fm-spawn-commit-attribution.test.sh` failed on the same mutation.
+What the sentinel proves is narrow and worth stating precisely, because an earlier version of this record overstated it.
+It proves `attribution.commit` is genuinely consulted and carried end to end into what the agent is told, which is what separates the live key from the schema-only `commitTrailers`.
+It does NOT prove the harness composed the trailer without the model's involvement: the token reaches the model through the same prompt section, so the mechanism is prompt-mediated there too.
 
-The guard runs three cases.
-The vendor mechanism is prompt-mediated by design: on 2.1.251 the attribution text is consumed only by prompt-text builders, which render it as an "End git commit messages with:" instruction, and there is no mechanical append anywhere in the binary.
-The settings therefore control the instruction the agent is given, and `attribution.commit` set empty works by omitting that instruction entirely.
-Supplying the settings from outside the repository under test, through claude's `--settings` flag with no `.claude/settings.local.json` in the agent's working tree, excludes a separate confound: an agent that read a settings file sitting in its own worktree and complied with it voluntarily.
-The control case deletes the attribution keys and must still produce at least one real trailer, so a vendor that stopped emitting trailers is reported rather than passing vacuously; the counter counts matching lines, which is all the zero-versus-non-zero assertions need.
-The suppressed case uses the generated settings verbatim and must produce zero.
-The sentinel case sets `attribution.commit` to a token generated at run time and requires that exact token in the resulting commit message.
-The token reaches the model through the prompt section the vendor renders, so this does not show the token was invisible to the agent; what it shows is that `attribution.commit` is genuinely consulted and carried end to end through the settings pipeline, which is precisely what separates it from the schema-accepted but emission-inert `attribution.commitTrailers`.
+Settings are supplied from OUTSIDE the repository under test through claude's `--settings` flag, with the guard asserting the repo carries no `.claude` settings of its own before and after each run.
+That excludes a separate confound: an agent that reads a settings file sitting in its own working tree and complies with it voluntarily, which is what an earlier confounded run actually measured.
 
-The trailer is model-discretionary rather than mechanical: a run given an exact commit message omitted it while a run asked to choose its own message emitted it, which is why the guard's control uses the second shape.
-No other supported harness has a verified equivalent key.
-None of codex, opencode, pi, pi-signed, grok, kimi, cursor, or muse was installed on the verification machine, and none documents a commit-attribution setting in the harness adapter record, so claiming a fix for them would assert unverified vendor behavior.
+The guard was also run with the attribution keys deleted from the generated settings in `bin/fm-spawn.sh`, to confirm it is not a guard that would pass either way, and it failed there.
+`tests/fm-spawn-commit-attribution.test.sh` and `tests/fm-git-hook-backstop.test.sh` were each mutation-tested the same way and each failed on the mutation.
 
 ## Herdr
 

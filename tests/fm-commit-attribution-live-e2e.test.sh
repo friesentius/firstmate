@@ -11,7 +11,13 @@
 #                produce at least one real Co-Authored-By trailer, so a vendor
 #                that stopped emitting trailers is reported instead of passing
 #                vacuously.
-#   suppressed - the settings fm-spawn generates verbatim; must produce zero.
+#   settings   - the settings fm-spawn generates, with NO backstop installed.
+#                Recorded, deliberately NOT asserted: this path is advisory and
+#                was measured leaking a trailer in 1 of 6 runs, so asserting
+#                zero here would be a flaky test of a known-imperfect mechanism.
+#   backstop   - the same settings WITH bin/fm-git-hook-install.sh's hook in the
+#                repo, which is what production actually gets; must produce zero.
+#                This is the deterministic guarantee and is a hard assertion.
 #   sentinel   - attribution.commit set to a custom token; that exact token must
 #                appear in the resulting commit message.
 #
@@ -97,7 +103,7 @@ generated_settings() {
 # message. Those are a third outcome, distinct from every trailer diagnosis the
 # caller reports, and must never be mistaken for one of them.
 claude_commit() {
-  local name=$1 settings=$2 repo settings_file
+  local name=$1 settings=$2 with_backstop=${3:-} repo settings_file
   repo=$TMP_ROOT/$name
   settings_file=$SETTINGS_DIR/$name.json
   printf '%s\n' "$settings" > "$settings_file"
@@ -109,6 +115,10 @@ claude_commit() {
   printf "print('hi')\n" > "$repo/app.py"
   [ ! -e "$repo/.claude" ] \
     || fail "$name: the repo under test must carry no claude settings of its own"
+  if [ "$with_backstop" = --with-backstop ]; then
+    "$ROOT/bin/fm-git-hook-install.sh" "$repo" >/dev/null \
+      || fail "$name: could not install the deterministic backstop"
+  fi
   ( cd "$repo" && "$CLAUDE_BIN" -p --permission-mode bypassPermissions \
       --settings "$settings_file" \
       'Commit the work in this repository with an appropriate commit message.' \
@@ -136,7 +146,7 @@ coauthor_count() {
 }
 
 test_generated_settings_suppress_the_trailer() {
-  local settings control_json sentinel_json control suppressed sentinel_msg
+  local settings control_json sentinel_json control suppressed backstop sentinel_msg
   generated_settings
   settings=$GENERATED_SETTINGS
   # Control: the same settings with only the attribution keys removed, so the
@@ -156,19 +166,26 @@ test_generated_settings_suppress_the_trailer() {
   coauthor_count "$COMMIT_MESSAGE"
   suppressed=$TRAILER_COUNT
 
+  claude_commit backstop "$(cat "$settings")" --with-backstop
+  coauthor_count "$COMMIT_MESSAGE"
+  backstop=$TRAILER_COUNT
+
   claude_commit sentinel "$sentinel_json"
   sentinel_msg=$COMMIT_MESSAGE
 
   [ "$control" -gt 0 ] || fail \
     "claude $CLAUDE_VERSION emitted no co-author trailer even without the suppression; this guard verified nothing and the control must be re-examined before the record is refreshed"
-  [ "$suppressed" -eq 0 ] || fail \
-    "claude $CLAUDE_VERSION still emitted $suppressed co-author trailer(s) with the settings fm-spawn generates"
+  # The settings-only count is reported, never asserted: the vendor mechanism is
+  # prompt-mediated, so it reduces trailers without eliminating them, and a hard
+  # assertion here would fail intermittently for a reason the backstop covers.
+  [ "$backstop" -eq 0 ] || fail \
+    "claude $CLAUDE_VERSION emitted $backstop co-author trailer(s) WITH the deterministic backstop installed; the hook is the guarantee and it did not hold"
   case $sentinel_msg in
     *"$SENTINEL_TRAILER"*) : ;;
     *) fail "claude $CLAUDE_VERSION did not carry attribution.commit through to the commit message; the sentinel '$SENTINEL_TRAILER' is absent, so the key is not demonstrably wired end to end and the suppressed run's zero may not be attributable to it" ;;
   esac
-  printf 'ok - claude (%s): fm-spawn settings suppress the commit co-author trailer (control=%s suppressed=%s sentinel=present)\n' \
-    "$CLAUDE_VERSION" "$control" "$suppressed"
+  printf 'ok - claude (%s): the backstop deterministically removes the commit co-author trailer (control=%s settings-only=%s backstop=%s sentinel=present)\n' \
+    "$CLAUDE_VERSION" "$control" "$suppressed" "$backstop"
 }
 
 test_generated_settings_suppress_the_trailer
