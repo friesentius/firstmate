@@ -31,12 +31,17 @@ TMP_ROOT=$(fm_test_tmproot fm-commit-attribution-live)
 
 # The generated settings are the artifact under test, so they come from a REAL
 # fm-spawn run rather than a copy hand-written here.
+#
+# Sets GENERATED_SETTINGS. Runs in the caller's shell, not a command
+# substitution, so a failed spawn aborts this script with its own diagnosis
+# instead of leaving the caller an empty path.
 generated_settings() {
   local case_dir=$TMP_ROOT/generator home proj wt fakebin out
   home="$case_dir/home"
   proj="$case_dir/project"
   wt="$case_dir/wt"
   fakebin=$(fm_test_make_spawn_fakebin "$case_dir/fake" claude)
+  [ -d "$fakebin" ] || fail "the spawn fakebin was not created"
   fm_test_spawn_home "$home" claude
   fm_git_worktree "$proj" "$wt" wt-attribution
   fm_test_spawn_brief "$home" attr-live-1
@@ -44,14 +49,19 @@ generated_settings() {
     fm_test_run_spawn "$home" "$wt" "$fakebin" attr-live-1 "$proj" \
     --mode no-mistakes --yolo off) || fail "fm-spawn failed: $out"
   [ -f "$wt/.claude/settings.local.json" ] || fail "fm-spawn wrote no claude settings"
-  printf '%s\n' "$wt/.claude/settings.local.json"
+  GENERATED_SETTINGS="$wt/.claude/settings.local.json"
 }
 
 # commit_trailer_count <case-name> <settings-json-or-empty>: build a throwaway
-# repo, have the real claude commit its one file, and echo how many
-# Co-Authored-By trailers the resulting commit message carries.
+# repo, have the real claude commit its one file, and set TRAILER_COUNT to how
+# many Co-Authored-By trailers the resulting commit message carries.
+#
+# Runs in the caller's shell, not a command substitution, so a claude run that
+# errored out or produced no commit aborts this script under its own explicit
+# message. Those are a third outcome, distinct from both trailer diagnoses the
+# caller reports, and must never be mistaken for either of them.
 commit_trailer_count() {
-  local name=$1 settings=$2 repo
+  local name=$1 settings=$2 repo count
   repo=$TMP_ROOT/$name
   mkdir -p "$repo/.claude"
   git init -q "$repo"
@@ -61,21 +71,31 @@ commit_trailer_count() {
   printf '%s\n' "$settings" > "$repo/.claude/settings.local.json"
   ( cd "$repo" && "$CLAUDE_BIN" -p --permission-mode bypassPermissions \
       'Commit the work in this repository with an appropriate commit message.' \
-      >/dev/null 2>&1 ) || fail "$name: the real claude run failed"
+      >/dev/null 2>&1 ) \
+    || fail "$name: the real claude ($CLAUDE_VERSION) run failed, so neither trailer count is meaningful and this guard verified nothing"
   git -C "$repo" rev-parse --verify -q HEAD >/dev/null \
-    || fail "$name: the real claude run produced no commit, so nothing was verified"
-  git -C "$repo" log -1 --format='%B' | grep -ci 'co-authored-by' || true
+    || fail "$name: the real claude ($CLAUDE_VERSION) run produced no commit, so neither trailer count is meaningful and this guard verified nothing"
+  count=$(git -C "$repo" log -1 --format='%B' | grep -ci 'co-authored-by' || true)
+  case $count in
+    ''|*[!0-9]*)
+      fail "$name: could not count co-author trailers in the resulting commit (got '$count')" ;;
+  esac
+  TRAILER_COUNT=$count
 }
 
 test_generated_settings_suppress_the_trailer() {
   local settings control_json control suppressed
-  settings=$(generated_settings)
+  generated_settings
+  settings=$GENERATED_SETTINGS
   # Control: the same settings with only the attribution keys removed, so the
   # two runs differ in exactly the thing under test.
-  control_json=$(jq -c 'del(.attribution) | del(.includeCoAuthoredBy)' "$settings")
+  control_json=$(jq -c 'del(.attribution) | del(.includeCoAuthoredBy)' "$settings") \
+    || fail "could not build the control settings from $settings"
 
-  control=$(commit_trailer_count control "$control_json")
-  suppressed=$(commit_trailer_count suppressed "$(cat "$settings")")
+  commit_trailer_count control "$control_json"
+  control=$TRAILER_COUNT
+  commit_trailer_count suppressed "$(cat "$settings")"
+  suppressed=$TRAILER_COUNT
 
   [ "$control" -gt 0 ] || fail \
     "claude $CLAUDE_VERSION emitted no co-author trailer even without the suppression; this guard verified nothing and the control must be re-examined before the record is refreshed"

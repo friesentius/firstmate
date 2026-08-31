@@ -1208,7 +1208,16 @@ families_for_changed_path() {
     bin/fm-quota-choose.sh)
       printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
-    bin/fm-sessionstart-run.sh|.claude/settings.json|.codex/hooks.json|\
+    .claude/settings.json)
+      # The run tier's two harness-supplied facts (source vocabulary and
+      # context-reset stdout injection) only show up against a real harness.
+      # This file also carries firstmate's own commit-attribution suppression,
+      # asserted by fm-spawn-commit-attribution.test.sh in another family.
+      printf '%s\n' session-bootstrap
+      printf '%s\n' live-harness-optin
+      printf '%s\n' __script__:fm-spawn-commit-attribution.test.sh
+      ;;
+    bin/fm-sessionstart-run.sh|.codex/hooks.json|\
     .pi/extensions/fm-primary-turnend-guard.ts)
       # The run tier's two harness-supplied facts (source vocabulary and
       # context-reset stdout injection) only show up against a real harness.

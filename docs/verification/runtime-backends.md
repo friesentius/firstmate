@@ -267,7 +267,8 @@ This guard is the refresh command after any harness upgrade; it spends a small n
 ## Commit attribution
 
 Claude Code appends a `Co-Authored-By` trailer to its own git commits by default, which `AGENTS.md` section 1 forbids.
-The suppression `bin/fm-spawn.sh` writes into every claude-harness worktree was verified on 2026-08-30 against claude 2.1.251 (Claude Code) on Linux x86_64, driving the real binary through two throwaway repositories that differ only in the attribution keys.
+`bin/fm-spawn.sh` writes the suppression into every claude-harness crewmate and scout worktree, while a secondmate home is a worktree of the firstmate repo itself and inherits the tracked `.claude/settings.json` instead.
+That suppression was verified on 2026-08-30 against claude 2.1.251 (Claude Code) on Linux x86_64, driving the real binary through two throwaway repositories that differ only in the attribution keys.
 
 ```sh
 FM_COMMIT_ATTRIBUTION_LIVE_E2E=1 tests/fm-commit-attribution-live-e2e.test.sh

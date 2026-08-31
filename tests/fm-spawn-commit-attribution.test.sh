@@ -2,9 +2,10 @@
 # AGENTS.md section 1 forbids adding an agent name as a commit co-author, but
 # Claude Code appends a Co-Authored-By trailer to its own git commits by
 # default. Asking for the suppression in the brief is not enforcement: the
-# trailer is emitted by the harness, so the only durable fix is the settings
-# bin/fm-spawn.sh writes for every claude-harness crewmate, scout, and
-# secondmate.
+# trailer is emitted by the harness, so the only durable fix is configuration.
+# bin/fm-spawn.sh writes it into every claude-harness crewmate and scout
+# worktree; a secondmate home is a worktree of the firstmate repo itself, so it
+# inherits the tracked .claude/settings.json instead.
 #
 # These tests run the REAL fm-spawn against a fake pane and an isolated git
 # worktree and assert the generated settings carry the suppression, so a future
@@ -18,42 +19,58 @@ set -u
 
 TMP_ROOT=$(fm_test_tmproot fm-spawn-commit-attribution)
 
-# spawn_settings <name> <harness> <id>: run a real ship spawn and echo the path
-# of the worktree's generated claude settings file (which may not exist).
-spawn_settings() {
-  local name=$1 harness=$2 id=$3 case_dir home proj wt fakebin out
+# spawn_case <name> <harness> <id>: build an isolated spawn world and set
+# CASE_WT / CASE_SETTINGS / CASE_FAKEBIN / CASE_HOME / CASE_PROJ for it. This
+# runs in the caller's shell rather than a command substitution so a helper that
+# calls fail aborts the whole script instead of handing back an empty path that
+# a later existence assertion would read as a pass.
+spawn_case() {
+  local name=$1 harness=$2 id=$3 case_dir
   case_dir="$TMP_ROOT/$name"
-  home="$case_dir/home"
-  proj="$case_dir/project"
-  wt="$case_dir/wt"
-  fakebin=$(fm_test_make_spawn_fakebin "$case_dir/fake" claude codex)
-  fm_test_spawn_home "$home" "$harness"
-  fm_git_worktree "$proj" "$wt" "wt-$name"
-  fm_test_spawn_brief "$home" "$id"
-  out=$(GROK_HOME="$home/grok-home" \
-    fm_test_run_spawn "$home" "$wt" "$fakebin" "$id" "$proj" \
-    --mode no-mistakes --yolo off) || fail "$harness spawn failed: $out"
-  printf '%s\n' "$wt/.claude/settings.local.json"
+  CASE_HOME="$case_dir/home"
+  CASE_PROJ="$case_dir/project"
+  CASE_WT="$case_dir/wt"
+  CASE_SETTINGS="$CASE_WT/.claude/settings.local.json"
+  CASE_FAKEBIN=$(fm_test_make_spawn_fakebin "$case_dir/fake" claude codex)
+  [ -d "$CASE_FAKEBIN" ] || fail "$name: the spawn fakebin was not created"
+  fm_test_spawn_home "$CASE_HOME" "$harness"
+  fm_git_worktree "$CASE_PROJ" "$CASE_WT" "wt-$name"
+  fm_test_spawn_brief "$CASE_HOME" "$id"
+}
+
+# run_spawn <id>: run a real ship spawn for the current case. Every case here is
+# a ship spawn, which carries an explicit delivery contract (AGENTS.md section
+# 7); these tests are about the generated settings, so they pass a fixed valid
+# one.
+run_spawn() {
+  GROK_HOME="$CASE_HOME/grok-home" \
+    fm_test_run_spawn "$CASE_HOME" "$CASE_WT" "$CASE_FAKEBIN" "$1" "$CASE_PROJ" \
+    --mode no-mistakes --yolo off
 }
 
 test_claude_spawn_suppresses_commit_trailers() {
-  local settings
-  settings=$(spawn_settings claude-attribution claude attr-cl-1)
-  assert_present "$settings" "claude spawn did not write settings"
-  jq -e . "$settings" >/dev/null || fail "generated claude settings are not valid JSON"
+  local out
+  spawn_case claude-attribution claude attr-cl-1
+  out=$(run_spawn attr-cl-1)
+  expect_code 0 $? "claude spawn should succeed: $out"
+  assert_contains "$out" 'spawned attr-cl-1 harness=claude' \
+    "claude spawn did not complete normally"
 
-  jq -e '.attribution.commitTrailers == false' "$settings" >/dev/null \
+  assert_present "$CASE_SETTINGS" "claude spawn did not write settings"
+  jq -e . "$CASE_SETTINGS" >/dev/null || fail "generated claude settings are not valid JSON"
+
+  jq -e '.attribution.commitTrailers == false' "$CASE_SETTINGS" >/dev/null \
     || fail "generated claude settings must set attribution.commitTrailers=false"
   # The deprecated predecessor is written alongside the current key so an older
   # installed Claude, which does not know attribution, still honors the rule.
-  jq -e '.includeCoAuthoredBy == false' "$settings" >/dev/null \
+  jq -e '.includeCoAuthoredBy == false' "$CASE_SETTINGS" >/dev/null \
     || fail "generated claude settings must also set includeCoAuthoredBy=false"
 
   # Control: the suppression must be additive, not a rewrite that drops the
   # busy-state wiring the same file carries.
   local ev
   for ev in UserPromptSubmit Stop StopFailure SessionEnd; do
-    jq -e ".hooks[\"$ev\"]" "$settings" >/dev/null \
+    jq -e ".hooks[\"$ev\"]" "$CASE_SETTINGS" >/dev/null \
       || fail "commit-attribution keys displaced the $ev hook wiring"
   done
   pass "a claude spawn writes commit-trailer suppression without disturbing the hook wiring"
@@ -64,15 +81,24 @@ test_non_claude_spawn_writes_no_claude_settings() {
   # harness must not grow a stray .claude settings file. No other supported
   # harness has a verified equivalent key (see the PR evidence), and inventing
   # one here would assert unverified vendor behavior.
-  local settings
-  settings=$(spawn_settings codex-attribution codex attr-cx-1)
-  assert_absent "$settings" "a codex spawn must not write claude settings"
+  #
+  # The spawn's own success is asserted first: an absence assertion proves
+  # nothing unless the run that was supposed to create the file actually ran.
+  local out
+  spawn_case codex-attribution codex attr-cx-1
+  out=$(run_spawn attr-cx-1)
+  expect_code 0 $? "codex spawn should succeed: $out"
+  assert_contains "$out" 'spawned attr-cx-1 harness=codex' \
+    "codex spawn did not complete normally"
+
+  assert_absent "$CASE_SETTINGS" "a codex spawn must not write claude settings"
   pass "the commit-trailer suppression stays scoped to the claude harness"
 }
 
 test_firstmate_own_settings_suppress_commit_trailers() {
   # Firstmate itself commits to this repo when it changes shared tracked
-  # material with an empty fleet, so its own settings need the same rule.
+  # material with an empty fleet, so its own settings need the same rule. A
+  # secondmate home is a worktree of this same repo and inherits this file.
   local own="$ROOT/.claude/settings.json"
   assert_present "$own" "firstmate's own claude settings are missing"
   jq -e '.attribution.commitTrailers == false' "$own" >/dev/null \
