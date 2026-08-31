@@ -1,4 +1,8 @@
 {
+  "attribution": {
+    "commitTrailers": false
+  },
+  "includeCoAuthoredBy": false,
   "hooks": {
     "SessionStart": [
       {

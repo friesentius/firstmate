@@ -264,6 +264,29 @@ Two findings from the run shaped the shipped behavior: an OpenCode vendor update
 Kimi was not installed on the verification machine; its receive path is the same one-line-plus-shell contract, and the portable ladder and enqueue regressions in `tests/fm-task-inbox.test.sh` and `tests/fm-send-inbox.test.sh` cover every harness-independent half.
 This guard is the refresh command after any harness upgrade; it spends a small number of real tokens per installed harness, reports an absent harness explicitly, and refuses a run that verified nothing.
 
+## Commit attribution
+
+Claude Code appends a `Co-Authored-By` trailer to its own git commits by default, which `AGENTS.md` section 1 forbids.
+The suppression `bin/fm-spawn.sh` writes into every claude-harness worktree was verified on 2026-08-30 against claude 2.1.251 (Claude Code) on Linux x86_64, driving the real binary through two throwaway repositories that differ only in the attribution keys.
+
+```sh
+FM_COMMIT_ATTRIBUTION_LIVE_E2E=1 tests/fm-commit-attribution-live-e2e.test.sh
+```
+
+Observed output:
+
+```text
+ok - claude (2.1.251 (Claude Code)): fm-spawn settings suppress the commit co-author trailer (control=1 suppressed=0)
+```
+
+The control run, using the same generated settings with only the attribution keys deleted, produced exactly one trailer, so the suppressed run's zero is a real difference rather than a vendor that had stopped emitting trailers.
+`attribution.commitTrailers` is the current key on 2.1.251; the schema still accepts `includeCoAuthoredBy` and describes it as deprecated in favor of `attribution`, so `fm-spawn` writes both and an older installed Claude that predates `attribution` still honors the rule.
+Unrecognized settings keys were observed to be tolerated silently in this version, so the deprecated key costs no diagnostic noise on a build that has moved on.
+
+The trailer is model-discretionary rather than mechanical: a run given an exact commit message omitted it while a run asked to choose its own message emitted it, which is why the guard's control uses the second shape.
+No other supported harness has a verified equivalent key.
+None of codex, opencode, pi, pi-signed, grok, kimi, cursor, or muse was installed on the verification machine, and none documents a commit-attribution setting in the harness adapter record, so claiming a fix for them would assert unverified vendor behavior.
+
 ## Herdr
 
 The compatibility floor is protocol 14.
