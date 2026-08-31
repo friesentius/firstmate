@@ -286,7 +286,9 @@ function EEn(e){return e!==void 0&&(e.commit!==void 0||e.pr!==void 0)}
 Two consequences follow, and the second one contradicts the settings documentation.
 
 First, `attribution.commit` set to the empty string satisfies `EEn` and wins outright, and `??` falls back only on null or undefined, so the empty string survives and the commit trailer is empty.
-Leaving `attribution.pr` unset keeps PR attribution on its own default through the `o.pr??e` fallback in this function.
+Leaving `attribution.pr` unset keeps PR attribution on its own default through the `o.pr??e` fallback, but only on builds that take the attribution branch.
+A build that predates the attribution object falls through to `includeCoAuthoredBy===!1`, which returns `{commit:"",pr:""}`, so the fallback key empties the PR attribution text as well and the "End PR bodies with:" prompt section disappears alongside the commit one.
+Independently of that, the dedicated PR-body path `KZn` checks `attribution.pr` first and then short-circuits on `includeCoAuthoredBy===!1`, so on 2.1.251 that path also returns empty while the second key is written.
 
 Second, `attribution.commitTrailers` does NOT satisfy `EEn`, which tests only `commit` and `pr`, so it is inert on this path.
 Its seven occurrences in the binary are all off the emission path: the settings schema allowlists (`br`, `Wr`, `Oo`), the managed-settings policy normalizer, the `pt` and `Se` helpers, and one telemetry key.
@@ -302,15 +304,23 @@ Note that the `includeCoAuthoredBy` branch fires a `tengu_dead_probe_include_coa
 FM_COMMIT_ATTRIBUTION_LIVE_E2E=1 tests/fm-commit-attribution-live-e2e.test.sh
 ```
 
-PENDING RE-VERIFICATION: the guard was rebuilt on 2026-08-30 around the corrected keys and a de-confounded design, and has not been run since.
+PENDING RE-VERIFICATION: the guard was rebuilt on 2026-08-30 around the corrected keys and the de-confounded design below, and the committed guard has not itself been run since.
+Its own output is therefore owed and is deliberately not recorded here.
 The previously recorded output was produced against the old `commitTrailers` settings and the old design, so it is not evidence for the current one and has been removed rather than restated.
-Re-run the command above and record its real output here.
+Re-run the command above and record its real output here before merge.
 
-The guard runs three cases, and its design answers a confound the first version could not.
-Supplying the settings inside the repository the agent commits in cannot distinguish harness-level suppression from the model reading the file and complying voluntarily, so the settings are now passed from outside that repository through claude's `--settings` flag and no `.claude/settings.local.json` is left in the agent's working tree.
-The control case deletes the attribution keys and must still produce exactly one real trailer, so a vendor that stopped emitting trailers is reported rather than passing vacuously.
+Separately from the guard, and not a substitute for it, a manual de-confounded three-cell check was run by hand against the shipped keys on 2026-08-30 with claude 2.1.251.
+It produced a control commit carrying one `Co-Authored-By` trailer, zero trailers with `attribution.commit` empty plus `includeCoAuthoredBy` false, and a custom `attribution.commit` string present in the commit message.
+That is a hand check with the same shape as the guard, not the named command's output, and it does not discharge the re-verification the guard still owes.
+
+The guard runs three cases.
+The vendor mechanism is prompt-mediated by design: on 2.1.251 the attribution text is consumed only by prompt-text builders, which render it as an "End git commit messages with:" instruction, and there is no mechanical append anywhere in the binary.
+The settings therefore control the instruction the agent is given, and `attribution.commit` set empty works by omitting that instruction entirely.
+Supplying the settings from outside the repository under test, through claude's `--settings` flag with no `.claude/settings.local.json` in the agent's working tree, excludes a separate confound: an agent that read a settings file sitting in its own worktree and complied with it voluntarily.
+The control case deletes the attribution keys and must still produce at least one real trailer, so a vendor that stopped emitting trailers is reported rather than passing vacuously; the counter counts matching lines, which is all the zero-versus-non-zero assertions need.
 The suppressed case uses the generated settings verbatim and must produce zero.
-The sentinel case sets `attribution.commit` to a token generated at run time that reaches claude only through `--settings`, and requires that exact token in the resulting commit message, which proves the harness composed the trailer text from the settings because the agent never saw the token.
+The sentinel case sets `attribution.commit` to a token generated at run time and requires that exact token in the resulting commit message.
+The token reaches the model through the prompt section the vendor renders, so this does not show the token was invisible to the agent; what it shows is that `attribution.commit` is genuinely consulted and carried end to end through the settings pipeline, which is precisely what separates it from the schema-accepted but emission-inert `attribution.commitTrailers`.
 
 The trailer is model-discretionary rather than mechanical: a run given an exact commit message omitted it while a run asked to choose its own message emitted it, which is why the guard's control uses the second shape.
 No other supported harness has a verified equivalent key.

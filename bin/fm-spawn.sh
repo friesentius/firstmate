@@ -2635,8 +2635,10 @@ if [ "$KIND" != secondmate ]; then
       # the branch 2.1.251 actually takes for a build with neither. Note that
       # attribution.commitTrailers is accepted by the settings schema and read
       # by the managed-settings policy normalizer, but is NOT consulted on the
-      # emission path, so it is not written here. attribution.pr is left unset
-      # so PR attribution keeps its own default.
+      # emission path, so it is not written here. attribution.pr is left unset,
+      # which keeps the PR default only on builds that take the attribution
+      # branch; a build that falls through to includeCoAuthoredBy=false gets an
+      # empty pr text as well, so PR attribution is suppressed there too.
       mkdir -p "$WT/.claude"
       busy_cmd_prefix="$(shell_quote "$FM_ROOT/bin/fm-busy-event.sh") apply $(shell_quote "$STATE_REAL") $(shell_quote "$ID")"
       busy_suffix="--gen $(shell_quote "$BUSY_GEN") --source claude-hook"

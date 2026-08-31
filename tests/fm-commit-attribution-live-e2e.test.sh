@@ -2,31 +2,37 @@
 # Opt-in live proof that the commit-trailer suppression bin/fm-spawn.sh writes
 # actually changes the installed Claude's git-commit behavior.
 #
-# Whether a Co-Authored-By trailer appears is emitted by the vendor, so no stub
+# Whether a Co-Authored-By trailer appears is decided by the vendor, so no stub
 # can prove it: a fake agent only confirms the assumption written into the fake.
 # This guard drives the REAL claude binary in throwaway repos and runs three
 # cases:
 #
 #   control    - the generated settings with the attribution keys deleted; must
-#                produce exactly one real Co-Authored-By trailer, so a vendor
+#                produce at least one real Co-Authored-By trailer, so a vendor
 #                that stopped emitting trailers is reported instead of passing
 #                vacuously.
 #   suppressed - the settings fm-spawn generates verbatim; must produce zero.
-#   sentinel   - attribution.commit set to a token that appears nowhere in the
-#                repository, the prompt, or anything the agent can read; that
-#                exact token must appear in the resulting commit message.
+#   sentinel   - attribution.commit set to a custom token; that exact token must
+#                appear in the resulting commit message.
 #
-# The sentinel case is the decisive discriminator. A clean suppressed run alone
-# is ambiguous: it could be the harness obeying the setting, or the model
-# reading the setting and complying voluntarily. The agent never sees the
-# sentinel string, so its appearance in the commit message proves the harness
-# itself composed the trailer text from the settings.
+# The mechanism is prompt-mediated by design. On claude 2.1.251 the attribution
+# text is consumed only by prompt-text builders, which render it as an "End git
+# commit messages with:" instruction; there is no mechanical append anywhere.
+# attribution.commit="" therefore works by OMITTING that instruction from the
+# system prompt. The token in the sentinel case does reach the model, through
+# that same prompt section, so its presence does NOT prove the agent never saw
+# it.
 #
-# For the same reason the settings are supplied from OUTSIDE the repository
-# under test, via claude's --settings flag, and no .claude/settings.local.json
-# is left inside the repo the agent works in. A result that the agent could
-# have produced by reading a file in its own working tree would not
-# distinguish harness-level suppression from model compliance.
+# What the sentinel does prove is narrower and still worth having: that
+# attribution.commit is genuinely consulted and carried end to end through the
+# settings pipeline into what the agent is told. That is exactly what separates
+# this live key from attribution.commitTrailers, which the schema accepts but
+# which never reaches the emission path at all.
+#
+# The settings are supplied from OUTSIDE the repository under test, via claude's
+# --settings flag, with no .claude/settings.local.json inside the repo the agent
+# works in. That excludes a separate confound: an agent that read a settings
+# file sitting in its own working tree and complied with it voluntarily.
 #
 # Run this after every Claude Code upgrade and refresh the dated record in
 # docs/verification/runtime-backends.md from its output.
@@ -52,9 +58,10 @@ TMP_ROOT=$(fm_test_tmproot fm-commit-attribution-live)
 SETTINGS_DIR="$TMP_ROOT/settings"
 mkdir -p "$SETTINGS_DIR"
 
-# A token the agent cannot have read from anywhere: it is generated at run time
-# and only ever reaches claude through --settings, never through the prompt or
-# a file in the repository it commits in.
+# A token generated at run time that reaches claude only through --settings,
+# never through a file in the repository it commits in. It does reach the model
+# via the prompt section the vendor renders from attribution.commit, which is
+# the wiring this case is meant to demonstrate.
 SENTINEL_TOKEN="fm-attr-$$-$(date +%s)-$RANDOM"
 SENTINEL_TRAILER="X-Fm-Attribution-Probe: $SENTINEL_TOKEN"
 
@@ -114,8 +121,11 @@ claude_commit() {
   COMMIT_MESSAGE=$(git -C "$repo" log -1 --format='%B')
 }
 
-# coauthor_count <message>: set TRAILER_COUNT to how many real Co-Authored-By
-# trailers <message> carries, refusing a non-numeric result.
+# coauthor_count <message>: set TRAILER_COUNT to how many LINES of <message>
+# carry a Co-Authored-By trailer, refusing a non-numeric result. Line counting
+# is deliberate: the assertions below only need zero versus non-zero, and the
+# trailer text is model-discretionary, so a tighter count would be flaky
+# without buying anything.
 coauthor_count() {
   local count
   count=$(printf '%s\n' "$1" | grep -ci 'co-authored-by' || true)
@@ -133,8 +143,8 @@ test_generated_settings_suppress_the_trailer() {
   # two runs differ in exactly the thing under test.
   control_json=$(jq -c 'del(.attribution) | del(.includeCoAuthoredBy)' "$settings") \
     || fail "could not build the control settings from $settings"
-  # Sentinel: the same settings with the commit trailer replaced by a token the
-  # agent has never seen.
+  # Sentinel: the same settings with the commit trailer replaced by a custom
+  # token, so a present token shows attribution.commit was actually consulted.
   sentinel_json=$(jq -c --arg t "$SENTINEL_TRAILER" '.attribution.commit = $t' "$settings") \
     || fail "could not build the sentinel settings from $settings"
 
@@ -155,7 +165,7 @@ test_generated_settings_suppress_the_trailer() {
     "claude $CLAUDE_VERSION still emitted $suppressed co-author trailer(s) with the settings fm-spawn generates"
   case $sentinel_msg in
     *"$SENTINEL_TRAILER"*) : ;;
-    *) fail "claude $CLAUDE_VERSION did not compose the commit trailer from attribution.commit; the sentinel '$SENTINEL_TRAILER' is absent, so a clean suppressed run cannot be attributed to the harness rather than to the model complying voluntarily" ;;
+    *) fail "claude $CLAUDE_VERSION did not carry attribution.commit through to the commit message; the sentinel '$SENTINEL_TRAILER' is absent, so the key is not demonstrably wired end to end and the suppressed run's zero may not be attributable to it" ;;
   esac
   printf 'ok - claude (%s): fm-spawn settings suppress the commit co-author trailer (control=%s suppressed=%s sentinel=present)\n' \
     "$CLAUDE_VERSION" "$control" "$suppressed"
