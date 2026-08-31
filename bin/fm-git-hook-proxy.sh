@@ -46,17 +46,35 @@ MSG_FILE=${1:-}
 # evidence when another harness is verified to emit one.
 FM_AGENT_COAUTHOR_ADDRESSES=${FM_AGENT_COAUTHOR_ADDRESSES:-noreply@anthropic.com}
 
+# Each address is compared LITERALLY, never compiled into a pattern. An address
+# is not a regex, and treating one as a regex is how an added address silently
+# stops matching (a `+` becomes a quantifier) or blanks the whole message (an
+# unbalanced bracket makes the pattern invalid). The trailer form stays
+# anchored - the line must start with the trailer key and end with the address
+# in angle brackets - so prose mentioning an address is untouched.
 STRIPPED="$MSG_FILE.fm-stripped.$$"
-cp -- "$MSG_FILE" "$STRIPPED" || exit 0
-for address in $FM_AGENT_COAUTHOR_ADDRESSES; do
-  # Anchored on the trailer form so prose mentioning the address is untouched.
-  grep -viE "^[[:space:]]*Co-Authored-By:.*<${address//./\\.}>[[:space:]]*$" \
-    "$STRIPPED" > "$STRIPPED.next" 2>/dev/null || true
-  [ -f "$STRIPPED.next" ] && mv -- "$STRIPPED.next" "$STRIPPED"
-done
-
-if ! cmp -s -- "$MSG_FILE" "$STRIPPED"; then
-  cat -- "$STRIPPED" > "$MSG_FILE"
+if awk -v addresses="$FM_AGENT_COAUTHOR_ADDRESSES" '
+  BEGIN { n = split(tolower(addresses), agent, /[ \t\n]+/) }
+  {
+    line = tolower($0)
+    sub(/^[ \t]+/, "", line)
+    sub(/[ \t]+$/, "", line)
+    if (index(line, "co-authored-by:") == 1) {
+      for (i = 1; i <= n; i++) {
+        if (agent[i] == "") continue
+        want = "<" agent[i] ">"
+        if (length(line) < length(want)) continue
+        if (substr(line, length(line) - length(want) + 1) == want) next
+      }
+    }
+    print
+  }
+' "$MSG_FILE" > "$STRIPPED" 2>/dev/null; then
+  # Only a successful pass may replace the message. A failed one must leave the
+  # commit message exactly as the author wrote it rather than truncating it.
+  if ! cmp -s -- "$MSG_FILE" "$STRIPPED"; then
+    cat -- "$STRIPPED" > "$MSG_FILE"
+  fi
 fi
-rm -f -- "$STRIPPED" "$STRIPPED.next"
+rm -f -- "$STRIPPED"
 exit 0

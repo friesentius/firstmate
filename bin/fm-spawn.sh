@@ -2553,6 +2553,9 @@ mkdir -p "$TASK_TMP/gotmp"
 mkdir -p "$STATE"
 STATE_REAL=$(cd "$STATE" && pwd -P)
 TURNEND="$STATE_REAL/$ID.turn-ended"
+# Stable heading for the brief note appended when the commit-attribution
+# backstop is unavailable, so a relaunch of the same task cannot stack it up.
+COMMIT_BACKSTOP_BRIEF_MARKER='## Commit attribution (backstop unavailable)'
 exclude_path() {
   local rel=$1 EXCL
   EXCL=$(git -C "$WT" rev-parse --git-path info/exclude 2>/dev/null || true)
@@ -2586,12 +2589,45 @@ if [ "$KIND" != secondmate ]; then
   # delegates to the project's own hooks, and it re-derives its state on every
   # spawn so a reused pooled slot cannot inherit a stale answer
   # (bin/fm-git-hook-install.sh owns the guards and the exact mechanics).
-  if ! FM_HOOK_INSTALL_OUT=$("$FM_ROOT/bin/fm-git-hook-install.sh" "$WT" 2>&1); then
-    echo "error: could not install the commit-attribution backstop for task $ID" >&2
+  #
+  # A backstop that cannot be installed must never cost this project the
+  # ability to dispatch at all: the installer refuses on repository layouts
+  # that have nothing to do with commit attribution (a shared core.worktree,
+  # for one), and a cosmetic trailer risk is not worth total loss of dispatch.
+  # So the spawn degrades instead of aborting, but never silently: the reason
+  # goes to stderr, the gap is recorded on the task record so it is inspectable
+  # long after the scrollback is gone, and the worker's own brief is told the
+  # rule explicitly, because for that task the instruction is the only
+  # protection left.
+  COMMIT_BACKSTOP_STATE=installed
+  COMMIT_BACKSTOP_REASON=
+  if FM_HOOK_INSTALL_OUT=$("$FM_ROOT/bin/fm-git-hook-install.sh" "$WT" 2>&1); then
+    exclude_path '.fm-git-hooks'
+  else
+    # Cheap classification only: the installer's own guardrails say "refusing
+    # to install", so anything else is an unexpected failure of the installer
+    # rather than a deliberate refusal.
+    case "$FM_HOOK_INSTALL_OUT" in
+      *"refusing to install the commit-attribution backstop"*) COMMIT_BACKSTOP_STATE=refused ;;
+      *) COMMIT_BACKSTOP_STATE=failed ;;
+    esac
+    COMMIT_BACKSTOP_REASON=$(printf '%s' "$FM_HOOK_INSTALL_OUT" | sed -n 's/^error: //p' | head -n 1 | tr -d '\r')
+    [ -n "$COMMIT_BACKSTOP_REASON" ] \
+      || COMMIT_BACKSTOP_REASON=$(printf '%s' "$FM_HOOK_INSTALL_OUT" | head -n 1 | tr -d '\r')
+    [ -n "$COMMIT_BACKSTOP_REASON" ] || COMMIT_BACKSTOP_REASON="the installer failed without a message"
+    echo "warning: task $ID is launching WITHOUT the deterministic commit-attribution backstop ($COMMIT_BACKSTOP_STATE): $COMMIT_BACKSTOP_REASON" >&2
     printf '%s\n' "$FM_HOOK_INSTALL_OUT" >&2
-    exit 1
+    echo "warning: the no-agent-co-author rule is instruction-only for $ID; it is stated in the brief and recorded on the task record" >&2
+    if ! grep -qF "$COMMIT_BACKSTOP_BRIEF_MARKER" "$BRIEF" 2>/dev/null; then
+      {
+        printf '\n%s\n' "$COMMIT_BACKSTOP_BRIEF_MARKER"
+        printf 'The deterministic commit-attribution backstop could not be installed in this worktree (%s: %s).\n' \
+          "$COMMIT_BACKSTOP_STATE" "$COMMIT_BACKSTOP_REASON"
+        printf 'Nothing mechanical will remove it for you, so this is on you: never add an agent name as a commit co-author, and never add a Co-Authored-By trailer naming any agent or model to any commit you make.\n'
+      } >> "$BRIEF" \
+        || echo "warning: could not state the no-agent-co-author rule in $BRIEF for $ID" >&2
+    fi
   fi
-  exclude_path '.fm-git-hooks'
 
   # Arm the semantic busy-state contract (bin/fm-busy-lib.sh) for every
   # adapter with a verified semantic source. The launch brief sent below IS a
@@ -2950,7 +2986,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen commit_attribution_backstop commit_attribution_backstop_reason spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -2969,6 +3005,15 @@ preserve_relaunch_meta() {
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
+  # Written only when the deterministic backstop is NOT in place, so the
+  # default record stays byte-identical and the field's presence IS the gap.
+  # Re-derived on every spawn (it is in preserve_relaunch_meta's owned list),
+  # so a relaunch into a repaired repository drops it rather than inheriting a
+  # stale answer.
+  if [ "${COMMIT_BACKSTOP_STATE:-installed}" != installed ]; then
+    echo "commit_attribution_backstop=$COMMIT_BACKSTOP_STATE"
+    echo "commit_attribution_backstop_reason=${COMMIT_BACKSTOP_REASON:-unknown}"
+  fi
   echo "spawn_gen=$SPAWN_GEN"
   # Default-off writes no traceparent= line.
   # backend= is written only for a non-default (non-tmux) backend, so the

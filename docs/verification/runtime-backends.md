@@ -325,9 +325,25 @@ That is what makes the rule deterministic rather than usually true, and it is en
 A linked worktree resolves hooks through the SHARED common directory - `git rev-parse --git-path hooks` in a worktree of this repo returns the common `.git/hooks` - so a plain hook file would fire in the captain's own checkout too.
 Per-worktree git config is what keeps it contained, and `tests/fm-git-hook-backstop.test.sh` asserts the primary checkout still emits what the task worktree strips.
 
+One part of the install is NOT worktree-scoped, and the earlier wording here overstated the containment.
+`core.hooksPath` is written in the worktree scope, but git honors a worktree's own config only once `extensions.worktreeConfig` is enabled, and that key is written into the project's SHARED config and is never unset, so it outlives the task worktree.
+The write is additive rather than behavioral: it only makes git read each worktree's own config file, and every other worktree's is empty, so no other checkout's hooks change.
+It is still a real, permanent change to the project's shared configuration, which is part of what the captain authorized as an exception to hard rule 1.
+The install refuses when `core.bare` or `core.worktree` sit in the shared config, because those are the settings git documents as unsafe to leave there once the extension is on.
+
 Two mechanics are worth recording because both were wrong on the first attempt and only testing caught them.
 `git rev-parse --git-path hooks` resolves THROUGH `core.hooksPath`, so once the backstop is installed it reports the backstop's own directory; deriving the project's original hooks directory from it makes a reinstall record itself and silently sever delegation to the project's hooks.
 Reading `git config --local --get core.hooksPath` is what avoids this, because the backstop's own value lives in the worktree scope and never appears in the local scope.
+
+### Coverage, and where it stops
+
+The deterministic backstop covers crewmate and scout task worktrees only.
+Secondmate agents get the advisory settings layer alone, through the tracked `.claude/settings.json` their home inherits, and that is the layer measured leaking above.
+So the gap is real rather than covered, and it is tracked separately as `fm-suppress-co-author-secondmates` rather than closed here.
+
+A task worktree can also end up without the backstop when the install refuses, which it does on repository layouts unrelated to commit attribution.
+`bin/fm-spawn.sh` degrades in that case instead of aborting the spawn, because losing a trailer guard must never cost the ability to dispatch at all.
+The degradation is never silent: the reason is reported on stderr, the task record at `state/<id>.meta` carries `commit_attribution_backstop` and `commit_attribution_backstop_reason`, and the worker's brief is told the no-agent-co-author rule explicitly, since for that task the instruction is the only protection left.
 
 ### Live guard
 

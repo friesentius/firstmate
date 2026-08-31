@@ -42,12 +42,22 @@ HOOK
   git -C "$TASK_WT" config user.name 'Backstop Test'
 }
 
-commit_with() {  # <worktree> <file> <message>
-  printf 'x\n' > "$1/$2"
-  git -C "$1" add -A
-  git -C "$1" commit -q -F - <<EOF
-$3
+# commit_with <worktree> <file> <message> [agent-address-list]
+# The optional address list is passed through git so it reaches the hook
+# process git forks, which is the only place the proxy reads it.
+commit_with() {
+  local wt=$1 file=$2 message=$3 addresses=${4-}
+  printf 'x\n' > "$wt/$file"
+  git -C "$wt" add -A
+  if [ -n "$addresses" ]; then
+    FM_AGENT_COAUTHOR_ADDRESSES="$addresses" git -C "$wt" commit -q -F - <<EOF
+$message
 EOF
+  else
+    git -C "$wt" commit -q -F - <<EOF
+$message
+EOF
+  fi
 }
 
 test_agent_trailer_stripped_and_human_kept() {
@@ -82,10 +92,14 @@ test_project_hook_still_runs_and_can_reject() {
   pass "the project's own hook still runs and keeps its power to reject"
 }
 
-test_primary_checkout_is_untouched() {
+test_primary_checkout_hook_behavior_does_not_leak() {
+  # Scoped to HOOK BEHAVIOR deliberately. The install is not a no-op on the
+  # project's shared config: it enables extensions.worktreeConfig there
+  # permanently, asserted below so this test states what actually happens.
+  # What must not leak is the hooks override itself.
   make_world scoped
   "$ROOT/bin/fm-git-hook-install.sh" "$TASK_WT" >/dev/null || fail "install failed"
-  local leaked
+  local leaked shared
   leaked=$(git -C "$PROJ" config --get core.hooksPath 2>/dev/null || true)
   [ -z "$leaked" ] \
     || fail "the backstop leaked core.hooksPath into the primary checkout: $leaked"
@@ -95,7 +109,78 @@ test_primary_checkout_is_untouched() {
 $AGENT_TRAILER"
   git -C "$PROJ" log -1 --format='%B' | grep -q 'noreply@anthropic.com' \
     || fail "the backstop changed the primary checkout's commits"
-  pass "the backstop is scoped to the task worktree and leaves the primary checkout alone"
+  # The one shared-config change the install really does make, recorded as a
+  # fact rather than left to be discovered: it is additive and never unset.
+  shared=$(git -C "$PROJ" config --local --get extensions.worktreeConfig 2>/dev/null || true)
+  [ "$shared" = true ] \
+    || fail "install must enable extensions.worktreeConfig in the shared config for worktree scoping to work (got '${shared:-unset}')"
+  pass "the backstop's hook behavior stays in the task worktree; only the additive extensions.worktreeConfig reaches the shared config"
+}
+
+test_relative_worktree_argument_still_arms_the_hook() {
+  # A relative <worktree> used to produce a relative core.hooksPath, which git
+  # resolves against the directory a hook runs from - so nothing was armed
+  # while the install's own self-check compared two identical relative strings
+  # and printed success. The proof has to be a real commit, not the config
+  # value, because the config value was exactly what looked right.
+  make_world relative
+  local parent base
+  parent=$(dirname "$TASK_WT")
+  base=$(basename "$TASK_WT")
+  ( cd "$parent" && "$ROOT/bin/fm-git-hook-install.sh" "./$base" >/dev/null ) \
+    || fail "install via a relative worktree path failed"
+  commit_with "$TASK_WT" r.txt "relative install
+
+$AGENT_TRAILER"
+  git -C "$TASK_WT" log -1 --format='%B' | grep -q 'noreply@anthropic.com' \
+    && fail "a relative worktree argument reported success but armed no working hook"
+  pass "installing via a relative worktree path still arms a working hook"
+}
+
+test_added_address_is_matched_literally() {
+  # FM_AGENT_COAUTHOR_ADDRESSES is the documented extension point. An address
+  # is not a regex: a `+` used to become a quantifier so the trailer survived,
+  # and an unbalanced bracket used to make the pattern invalid and blank the
+  # whole commit message.
+  make_world literal
+  "$ROOT/bin/fm-git-hook-install.sh" "$TASK_WT" >/dev/null || fail "install failed"
+  local plus_trailer msg
+  plus_trailer='Co-Authored-By: Some Agent <noreply+agent@example.com>'
+  commit_with "$TASK_WT" plus.txt "add plus
+
+mentions noreply+agent@example.com in prose
+$HUMAN_TRAILER
+$plus_trailer" 'noreply+agent@example.com' \
+    || fail "the plus-address commit was rejected"
+  msg=$(git -C "$TASK_WT" log -1 --format='%B')
+  case $msg in
+    *"$plus_trailer"*) fail "an address containing + was not matched literally, so the agent trailer survived" ;;
+  esac
+  case $msg in
+    *"$HUMAN_TRAILER"*) : ;;
+    *) fail "the literal match removed a legitimate human co-author" ;;
+  esac
+  case $msg in
+    *"mentions noreply+agent@example.com in prose"*) : ;;
+    *) fail "the literal match removed prose that merely mentions the address" ;;
+  esac
+
+  # An address the old code would have compiled into an invalid pattern must
+  # leave the message exactly as written, never truncate it.
+  commit_with "$TASK_WT" bad.txt "unmatched bracket subject
+
+body that must survive" 'bad[unclosed@example.com' \
+    || fail "the metacharacter-address commit was rejected"
+  msg=$(git -C "$TASK_WT" log -1 --format='%B')
+  case $msg in
+    *"unmatched bracket subject"*) : ;;
+    *) fail "an address with regex metacharacters blanked the commit subject" ;;
+  esac
+  case $msg in
+    *"body that must survive"*) : ;;
+    *) fail "an address with regex metacharacters blanked the commit body" ;;
+  esac
+  pass "an added address is matched literally and can neither miss its trailer nor blank the message"
 }
 
 test_reinstall_never_records_itself() {
@@ -140,6 +225,8 @@ test_refuses_unsafe_repository_configurations() {
 
 test_agent_trailer_stripped_and_human_kept
 test_project_hook_still_runs_and_can_reject
-test_primary_checkout_is_untouched
+test_primary_checkout_hook_behavior_does_not_leak
+test_relative_worktree_argument_still_arms_the_hook
+test_added_address_is_matched_literally
 test_reinstall_never_records_itself
 test_refuses_unsafe_repository_configurations

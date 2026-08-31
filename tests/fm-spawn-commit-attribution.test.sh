@@ -16,6 +16,12 @@
 # managed-settings policy normalizer but never consulted on the emission path,
 # so it is deliberately not one of the keys asserted here.
 #
+# Those settings are advisory, so fm-spawn also installs the deterministic
+# git-layer backstop (bin/fm-git-hook-install.sh) into the same worktree. That
+# wiring is asserted here through behavior - a real commit made in the spawned
+# worktree must come out without the trailer - because the settings assertions
+# below would all still pass with the install call deleted.
+#
 # These tests run the REAL fm-spawn against a fake pane and an isolated git
 # worktree and assert the generated settings carry the suppression, so a future
 # edit to that generated JSON cannot silently drop it. The live proof that the
@@ -25,8 +31,40 @@ set -u
 
 # shellcheck source=tests/fixtures.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
+# The task record is read with production's own reader rather than a hand-rolled
+# grep, so these assertions follow the meta contract wherever it moves.
+# shellcheck source=bin/fm-backend.sh
+. "$ROOT/bin/fm-backend.sh"
 
 TMP_ROOT=$(fm_test_tmproot fm-spawn-commit-attribution)
+AGENT_TRAILER='Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>'
+HUMAN_TRAILER='Co-Authored-By: A Human <human@example.com>'
+
+# assert_spawned_worktree_strips_agent_trailers <label>: prove the spawn armed a
+# WORKING backstop in the worktree it just prepared, by committing there for
+# real. Behavior, not the presence of a call: deleting the install from
+# bin/fm-spawn.sh must fail this.
+assert_spawned_worktree_strips_agent_trailers() {
+  local label=$1 msg
+  printf 'backstop\n' > "$CASE_WT/backstop-probe.txt"
+  git -C "$CASE_WT" add -A
+  git -C "$CASE_WT" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' \
+    commit -q -F - <<EOF || fail "$label: the probe commit was rejected"
+probe the spawned worktree
+
+$HUMAN_TRAILER
+$AGENT_TRAILER
+EOF
+  msg=$(git -C "$CASE_WT" log -1 --format='%B')
+  case $msg in
+    *"noreply@anthropic.com"*)
+      fail "$label: a commit in the spawned worktree kept the agent co-author trailer, so the spawn armed no working backstop" ;;
+  esac
+  case $msg in
+    *"$HUMAN_TRAILER"*) : ;;
+    *) fail "$label: the spawned worktree's backstop removed a legitimate human co-author" ;;
+  esac
+}
 
 # spawn_case <name> <harness> <id>: build an isolated spawn world and set
 # CASE_WT / CASE_SETTINGS / CASE_FAKEBIN / CASE_HOME / CASE_PROJ for it. This
@@ -90,7 +128,8 @@ test_claude_spawn_suppresses_commit_trailers() {
     jq -e ".hooks[\"$ev\"]" "$CASE_SETTINGS" >/dev/null \
       || fail "commit-attribution keys displaced the $ev hook wiring"
   done
-  pass "a claude spawn writes commit-trailer suppression without disturbing the hook wiring"
+  assert_spawned_worktree_strips_agent_trailers claude
+  pass "a claude spawn writes commit-trailer suppression and arms a working deterministic backstop"
 }
 
 test_non_claude_spawn_writes_no_claude_settings() {
@@ -109,7 +148,51 @@ test_non_claude_spawn_writes_no_claude_settings() {
     "codex spawn did not complete normally"
 
   assert_absent "$CASE_SETTINGS" "a codex spawn must not write claude settings"
-  pass "the commit-trailer suppression stays scoped to the claude harness"
+  # The settings layer is claude-only, but the backstop is not: it works at the
+  # git layer precisely so every harness gets the deterministic guarantee.
+  assert_spawned_worktree_strips_agent_trailers codex
+  pass "the settings suppression stays claude-scoped while the git-layer backstop covers another harness too"
+}
+
+test_spawn_degrades_when_the_backstop_cannot_be_installed() {
+  # The installer refuses on repository layouts that have nothing to do with
+  # commit attribution. Losing a cosmetic trailer guard must never cost the
+  # ability to dispatch, so the spawn proceeds - loudly, and with the gap
+  # recorded where it can still be found after the scrollback is gone.
+  local out meta brief
+  spawn_case degraded-attribution claude attr-cl-2
+  git -C "$CASE_WT" config core.worktree "$CASE_WT"
+
+  out=$(run_spawn attr-cl-2)
+  expect_code 0 $? "a spawn must still succeed when the backstop cannot be installed: $out"
+  assert_contains "$out" 'spawned attr-cl-2 harness=claude' \
+    "the spawn did not complete after the backstop was refused"
+  assert_contains "$out" 'WITHOUT the deterministic commit-attribution backstop' \
+    "the missing backstop was not reported"
+  assert_contains "$out" 'core.worktree is set' \
+    "the report did not name the installer's concrete reason"
+
+  # Durable, not just scrollback: the task's own record carries the gap.
+  meta="$CASE_HOME/state/attr-cl-2.meta"
+  assert_present "$meta" "the task record was not written"
+  [ "$(fm_meta_get "$meta" commit_attribution_backstop)" = refused ] \
+    || fail "the task record must record the refused backstop"
+  case $(fm_meta_get "$meta" commit_attribution_backstop_reason) in
+    *"core.worktree is set"*) : ;;
+    *) fail "the task record must carry the reason the backstop is missing" ;;
+  esac
+
+  # With no mechanical strip, the instruction is the only protection left, so
+  # the worker has to actually be told.
+  brief="$CASE_HOME/data/attr-cl-2/brief.md"
+  assert_grep 'never add an agent name as a commit co-author' "$brief" \
+    "the worker's brief must state the rule when nothing enforces it"
+
+  # And the claimed gap must be the real state: no hooks override was left half
+  # installed behind the warning.
+  [ -z "$(git -C "$CASE_WT" config --get core.hooksPath 2>/dev/null || true)" ] \
+    || fail "the spawn reported no backstop but left a core.hooksPath override behind"
+  pass "a refused backstop degrades the spawn loudly and durably instead of aborting it"
 }
 
 test_firstmate_own_settings_suppress_commit_trailers() {
@@ -129,4 +212,5 @@ test_firstmate_own_settings_suppress_commit_trailers() {
 
 test_claude_spawn_suppresses_commit_trailers
 test_non_claude_spawn_writes_no_claude_settings
+test_spawn_degrades_when_the_backstop_cannot_be_installed
 test_firstmate_own_settings_suppress_commit_trailers

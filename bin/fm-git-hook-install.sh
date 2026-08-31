@@ -9,6 +9,14 @@
 # the captain's own checkout; the per-worktree config is what keeps this
 # contained.
 #
+# One part of that is NOT worktree-scoped and is permanent: git honors a
+# worktree's own config only once extensions.worktreeConfig is enabled, and that
+# key is written into the project's SHARED config and is never unset, so it
+# outlives the task worktree. The write is additive rather than behavioral: it
+# only makes git read each worktree's own config file, and every other
+# worktree's is empty, so no other checkout's hooks change. It is still a real
+# change to the project's shared configuration and is recorded as one.
+#
 # Guardrails, each of which refuses rather than proceeding quietly:
 #   - core.bare true or core.worktree set: git documents these as unsafe to
 #     leave in shared config once extensions.worktreeConfig is on, so this
@@ -26,6 +34,11 @@ PROXY="$SCRIPT_DIR/fm-git-hook-proxy.sh"
 [ "$#" -eq 1 ] || { echo "usage: fm-git-hook-install.sh <worktree>" >&2; exit 2; }
 WT=$1
 [ -d "$WT" ] || { echo "error: worktree '$WT' is not a directory" >&2; exit 2; }
+# Resolve to an absolute path before deriving anything else from it. Git
+# resolves a relative core.hooksPath against the directory a hook runs from, so
+# storing a relative value arms nothing while every string comparison in this
+# script still matches what was written.
+WT=$(cd "$WT" && pwd) || { echo "error: could not resolve worktree '$1' to an absolute path" >&2; exit 2; }
 [ -x "$PROXY" ] || { echo "error: hook proxy is missing or not executable: $PROXY" >&2; exit 1; }
 
 git -C "$WT" rev-parse --git-dir >/dev/null 2>&1 \
@@ -113,6 +126,18 @@ fi
 got=$(git -C "$WT" config --get core.hooksPath 2>/dev/null || true)
 [ "$got" = "$HOOKS_DIR" ] || {
   echo "error: core.hooksPath did not take effect in '$WT' (got '${got:-unset}')" >&2
+  exit 1
+}
+# Comparing the configured string against what we wrote cannot catch a value
+# git resolves somewhere else, so prove the hook is actually reachable at the
+# path git will use. Reporting success while nothing is armed is the one
+# failure mode this backstop must never have.
+case $got in
+  /*) resolved=$got ;;
+  *) resolved="$WT/$got" ;;
+esac
+{ [ -f "$resolved/commit-msg" ] && [ -x "$resolved/commit-msg" ]; } || {
+  echo "error: no executable commit-msg hook where git will look for it in '$WT' ('$resolved/commit-msg')" >&2
   exit 1
 }
 printf 'installed commit-attribution backstop in %s\n' "$WT"
