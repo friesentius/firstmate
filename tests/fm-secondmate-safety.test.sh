@@ -532,14 +532,40 @@ test_home_seed_no_projects_end_to_end() {
   assert_grep 'kind=secondmate' "$meta" "project-less spawn meta lost kind=secondmate"
   assert_grep "home=$sub_abs" "$meta" "project-less spawn meta lost the subhome"
   # The commit-attribution record convention reads an absent field as an
-  # installed backstop, and the deterministic backstop does not cover secondmate
-  # homes, so the record has to say so rather than stay silent
-  # (docs/verification/runtime-backends.md owns the coverage).
-  assert_grep 'commit_attribution_backstop=unsupported' "$meta" \
-    "a secondmate record must state that the deterministic backstop does not cover it"
+  # installed backstop. The deterministic backstop now covers secondmate
+  # homes too - a secondmate's own home is itself a firstmate checkout it
+  # commits to directly - so the field must be absent here, not stay behind
+  # as a stale gap (docs/verification/runtime-backends.md owns the coverage).
+  assert_no_grep 'commit_attribution_backstop=' "$meta" \
+    "a secondmate record must not claim a commit-attribution gap once the backstop covers it"
   proj_val=$(grep '^projects=' "$meta" | head -1 | cut -d= -f2-)
   [ -z "$proj_val" ] || fail "project-less spawn recorded a non-empty projects meta: '$proj_val'"
-  pass "home seeding scaffolds, registers, and spawns a project-less home end to end"
+
+  # Behavior, not just the record: a real commit made directly in the
+  # secondmate's own home - exactly what a secondmate does when it edits
+  # firstmate's own shared tracked material with an empty fleet (AGENTS.md
+  # section 1) - must come out with the agent trailer stripped and a human
+  # co-author kept, proving the git-layer hook is actually armed there.
+  printf 'probe\n' > "$sub_abs/backstop-probe.txt"
+  git -C "$sub_abs" add -A
+  git -C "$sub_abs" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' \
+    commit -q -F - <<EOF || fail "probe commit in the secondmate home was rejected"
+probe the secondmate home
+
+Co-Authored-By: A Human <human@example.com>
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+EOF
+  local probe_msg
+  probe_msg=$(git -C "$sub_abs" log -1 --format='%B')
+  case $probe_msg in
+    *"noreply@anthropic.com"*)
+      fail "a commit made directly in the secondmate home kept the agent co-author trailer" ;;
+  esac
+  case $probe_msg in
+    *"Co-Authored-By: A Human <human@example.com>"*) : ;;
+    *) fail "the secondmate home's backstop removed a legitimate human co-author" ;;
+  esac
+  pass "home seeding scaffolds, registers, and spawns a project-less home end to end, with a working deterministic backstop"
 }
 
 test_secondmate_spawn_resolves_punctuated_registry_projects() {

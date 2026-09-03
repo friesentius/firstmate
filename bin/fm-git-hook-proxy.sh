@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Firstmate's git hook proxy, installed into a task worktree by
-# bin/fm-git-hook-install.sh and reached through that worktree's own
-# core.hooksPath.
+# Firstmate's git hook proxy, installed into a worktree (a crewmate/scout
+# task worktree or a secondmate's own home) by bin/fm-git-hook-install.sh and
+# reached through that worktree's own core.hooksPath.
 #
 # Two jobs, in this order:
 #   1. Run the project's own hook of the same name, if it has one, unchanged.

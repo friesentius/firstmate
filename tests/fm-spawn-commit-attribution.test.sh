@@ -188,8 +188,10 @@ test_spawn_degrades_when_the_backstop_cannot_be_installed() {
   esac
 
   # With no mechanical strip, the instruction is the only protection left, so
-  # the worker has to actually be told.
-  brief="$CASE_HOME/data/attr-cl-2/brief.md"
+  # the worker has to actually be told. A no-mistakes ship spawn renders the
+  # note into launch-brief.md (the file __BRIEF__ actually hands the worker),
+  # not the pre-render brief.md, so that is the file to check.
+  brief="$CASE_HOME/data/attr-cl-2/launch-brief.md"
   assert_grep 'never add an agent name as a commit co-author' "$brief" \
     "the worker's brief must state the rule when nothing enforces it"
 
@@ -266,7 +268,9 @@ $NOTE_END"
 
   out=$(run_spawn attr-cl-4)
   expect_code 0 $? "the spawn should succeed: $out"
-  brief="$CASE_HOME/data/attr-cl-4/brief.md"
+  # launch-brief.md, not the pre-render brief.md: that is the file the note is
+  # synced into and the one __BRIEF__ actually hands the worker.
+  brief="$CASE_HOME/data/attr-cl-4/launch-brief.md"
   assert_no_grep "$NOTE_MARKER" "$brief" \
     "a brief must lose the backstop-unavailable note once the backstop installs"
   assert_no_grep 'a reason from some earlier spawn' "$brief" \
@@ -294,7 +298,9 @@ $NOTE_END"
 
   out=$(run_spawn attr-cl-5)
   expect_code 0 $? "the spawn should succeed: $out"
-  brief="$CASE_HOME/data/attr-cl-5/brief.md"
+  # launch-brief.md, not the pre-render brief.md: that is the file the note is
+  # synced into and the one __BRIEF__ actually hands the worker.
+  brief="$CASE_HOME/data/attr-cl-5/launch-brief.md"
   markers=$(grep -cF "$NOTE_MARKER" "$brief" || true)
   [ "$markers" = 1 ] || fail "a degraded relaunch must leave exactly one note, found $markers"
   assert_no_grep 'a reason from some earlier spawn' "$brief" \

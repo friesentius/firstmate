@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Install firstmate's commit-attribution backstop into one task worktree.
+# Install firstmate's commit-attribution backstop into one worktree: a
+# crewmate/scout task worktree, or a secondmate's own home (itself a firstmate
+# checkout the secondmate commits to directly).
 # Usage: fm-git-hook-install.sh <worktree>
 #
 # Installs bin/fm-git-hook-proxy.sh as this worktree's core.hooksPath, scoped

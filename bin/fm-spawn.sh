@@ -2558,18 +2558,26 @@ TURNEND="$STATE_REAL/$ID.turn-ended"
 # ends so it can be rewritten in place rather than only appended.
 COMMIT_BACKSTOP_BRIEF_MARKER='## Commit attribution (backstop unavailable)'
 COMMIT_BACKSTOP_BRIEF_END='<!-- end commit-attribution note -->'
-# Every task kind answers for the backstop, including the kinds it does not
-# cover, so an absent record field can never be read as a backstop that is in
-# place. A secondmate home is outside the deterministic layer by design
-# (docs/verification/runtime-backends.md records the coverage and the tracked
-# follow-up); the non-secondmate branch below overwrites this with what its own
-# install actually did.
+# Every task kind answers for the backstop, so an absent record field can never
+# be read as a backstop that is in place. Every kind's own worktree - a
+# crewmate/scout task worktree or a secondmate's home, which is itself a
+# firstmate checkout a secondmate commits to directly - gets the same install
+# attempt below; this default is overwritten with what that install actually
+# did.
 COMMIT_BACKSTOP_STATE=unsupported
-COMMIT_BACKSTOP_REASON='secondmate homes are outside the deterministic backstop, which covers crewmate and scout task worktrees only'
+COMMIT_BACKSTOP_REASON='the installer was not reached before spawn completed'
 exclude_path() {
   local rel=$1 EXCL
   EXCL=$(git -C "$WT" rev-parse --git-path info/exclude 2>/dev/null || true)
   [ -n "$EXCL" ] || return 0
+  # git prints an absolute path for a linked worktree, but a plain relative
+  # one (".git/info/exclude") for a standalone clone - a secondmate home not
+  # leased from the treehouse pool is exactly that, so this cannot assume
+  # $EXCL resolves against the caller's own cwd.
+  case $EXCL in
+    /*) : ;;
+    *) EXCL="$WT/$EXCL" ;;
+  esac
   mkdir -p "$(dirname "$EXCL")"
   grep -qxF "$rel" "$EXCL" 2>/dev/null || echo "$rel" >> "$EXCL"
 }
@@ -2626,53 +2634,55 @@ if [ "$RELAUNCH" -eq 1 ]; then
   RELAUNCH_REPLACEMENT_STATE=$STATE_REAL
   RELAUNCH_REPLACEMENT_WT=$WT
 fi
-if [ "$KIND" != secondmate ]; then
-  # Deterministic commit-attribution backstop, installed for EVERY harness
-  # because it works at the git layer rather than through any one vendor's
-  # settings. The claude settings written below suppress the trailer only by
-  # omitting an instruction from the model's prompt, which is advisory: the
-  # measured leak is recorded in docs/verification/runtime-backends.md. This
-  # hook is what makes "never add an agent name as a commit co-author"
-  # deterministic rather than usually true. It is scoped to this worktree, it
-  # delegates to the project's own hooks, and it re-derives its state on every
-  # spawn so a reused pooled slot cannot inherit a stale answer
-  # (bin/fm-git-hook-install.sh owns the guards and the exact mechanics).
-  #
-  # A backstop that cannot be installed must never cost this project the
-  # ability to dispatch at all: the installer refuses on repository layouts
-  # that have nothing to do with commit attribution (a shared core.worktree,
-  # for one), and a cosmetic trailer risk is not worth total loss of dispatch.
-  # So the spawn degrades instead of aborting, but never silently: the reason
-  # goes to stderr, the gap is recorded on the task record so it is inspectable
-  # long after the scrollback is gone, and the worker's own brief is told the
-  # rule explicitly, because for that task the instruction is the only
-  # protection left.
-  COMMIT_BACKSTOP_STATE=installed
-  COMMIT_BACKSTOP_REASON=
-  # The installer creates .fm-git-hooks before several of its own failure
-  # exits, so the exclusion has to hold whatever the install does. Excluding a
-  # path that never appears is harmless; leaving it unexcluded lets a partial
-  # install reach a worker's commit and block teardown's dirty check.
-  exclude_path '.fm-git-hooks'
-  if ! FM_HOOK_INSTALL_OUT=$("$FM_ROOT/bin/fm-git-hook-install.sh" "$WT" 2>&1); then
-    # Cheap classification only: the installer's own guardrails say "refusing
-    # to install", so anything else is an unexpected failure of the installer
-    # rather than a deliberate refusal.
-    case "$FM_HOOK_INSTALL_OUT" in
-      *"refusing to install the commit-attribution backstop"*) COMMIT_BACKSTOP_STATE=refused ;;
-      *) COMMIT_BACKSTOP_STATE=failed ;;
-    esac
-    COMMIT_BACKSTOP_REASON=$(printf '%s' "$FM_HOOK_INSTALL_OUT" | sed -n 's/^error: //p' | head -n 1 | tr -d '\r')
-    [ -n "$COMMIT_BACKSTOP_REASON" ] \
-      || COMMIT_BACKSTOP_REASON=$(printf '%s' "$FM_HOOK_INSTALL_OUT" | head -n 1 | tr -d '\r')
-    [ -n "$COMMIT_BACKSTOP_REASON" ] || COMMIT_BACKSTOP_REASON="the installer failed without a message"
-    echo "warning: task $ID is launching WITHOUT the deterministic commit-attribution backstop ($COMMIT_BACKSTOP_STATE): $COMMIT_BACKSTOP_REASON" >&2
-    printf '%s\n' "$FM_HOOK_INSTALL_OUT" >&2
-    echo "warning: the no-agent-co-author rule is instruction-only for $ID; it is stated in the brief and recorded on the task record" >&2
-  fi
-  sync_commit_backstop_brief_note "$BRIEF" \
-    || echo "warning: could not bring the commit-attribution note in $BRIEF up to date for $ID" >&2
+# Deterministic commit-attribution backstop, installed for EVERY harness and
+# EVERY kind - including a secondmate's own home, which is itself a firstmate
+# checkout a secondmate commits to directly - because it works at the git
+# layer rather than through any one vendor's settings. The per-harness
+# advisory settings written below (non-secondmate only) suppress the trailer
+# only by omitting an instruction from the model's prompt, which is advisory:
+# the measured leak is recorded in docs/verification/runtime-backends.md. This
+# hook is what makes "never add an agent name as a commit co-author"
+# deterministic rather than usually true. It is scoped to this worktree, it
+# delegates to the project's own hooks, and it re-derives its state on every
+# spawn so a reused pooled slot cannot inherit a stale answer
+# (bin/fm-git-hook-install.sh owns the guards and the exact mechanics).
+#
+# A backstop that cannot be installed must never cost this project the
+# ability to dispatch at all: the installer refuses on repository layouts
+# that have nothing to do with commit attribution (a shared core.worktree,
+# for one), and a cosmetic trailer risk is not worth total loss of dispatch.
+# So the spawn degrades instead of aborting, but never silently: the reason
+# goes to stderr, the gap is recorded on the task record so it is inspectable
+# long after the scrollback is gone, and the worker's own brief is told the
+# rule explicitly, because for that task the instruction is the only
+# protection left.
+COMMIT_BACKSTOP_STATE=installed
+COMMIT_BACKSTOP_REASON=
+# The installer creates .fm-git-hooks before several of its own failure
+# exits, so the exclusion has to hold whatever the install does. Excluding a
+# path that never appears is harmless; leaving it unexcluded lets a partial
+# install reach a worker's commit and block teardown's dirty check.
+exclude_path '.fm-git-hooks'
+if ! FM_HOOK_INSTALL_OUT=$("$FM_ROOT/bin/fm-git-hook-install.sh" "$WT" 2>&1); then
+  # Cheap classification only: the installer's own guardrails say "refusing
+  # to install", so anything else is an unexpected failure of the installer
+  # rather than a deliberate refusal.
+  case "$FM_HOOK_INSTALL_OUT" in
+    *"refusing to install the commit-attribution backstop"*) COMMIT_BACKSTOP_STATE=refused ;;
+    *) COMMIT_BACKSTOP_STATE=failed ;;
+  esac
+  COMMIT_BACKSTOP_REASON=$(printf '%s' "$FM_HOOK_INSTALL_OUT" | sed -n 's/^error: //p' | head -n 1 | tr -d '\r')
+  [ -n "$COMMIT_BACKSTOP_REASON" ] \
+    || COMMIT_BACKSTOP_REASON=$(printf '%s' "$FM_HOOK_INSTALL_OUT" | head -n 1 | tr -d '\r')
+  [ -n "$COMMIT_BACKSTOP_REASON" ] || COMMIT_BACKSTOP_REASON="the installer failed without a message"
+  echo "warning: task $ID is launching WITHOUT the deterministic commit-attribution backstop ($COMMIT_BACKSTOP_STATE): $COMMIT_BACKSTOP_REASON" >&2
+  printf '%s\n' "$FM_HOOK_INSTALL_OUT" >&2
+  echo "warning: the no-agent-co-author rule is instruction-only for $ID; it is stated in the brief and recorded on the task record" >&2
+fi
+sync_commit_backstop_brief_note "$BRIEF" \
+  || echo "warning: could not bring the commit-attribution note in $BRIEF up to date for $ID" >&2
 
+if [ "$KIND" != secondmate ]; then
   # Arm the semantic busy-state contract (bin/fm-busy-lib.sh) for every
   # adapter with a verified semantic source. The launch brief sent below IS a
   # submitted turn, so the seed record is busy/fm-spawn. The minted gen is
@@ -3051,11 +3061,11 @@ preserve_relaunch_meta() {
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
   # Written only when the deterministic backstop is NOT in place, so the
   # default record stays byte-identical and the field's presence IS the gap.
-  # Every kind sets the state explicitly, including the secondmate kind the
-  # backstop does not cover, so an absent field means an installed backstop
-  # rather than an unanswered question. Re-derived on every spawn (it is in
-  # preserve_relaunch_meta's owned list), so a relaunch into a repaired
-  # repository drops it rather than inheriting a stale answer.
+  # Every kind, including secondmate, sets the state explicitly, so an absent
+  # field means an installed backstop rather than an unanswered question.
+  # Re-derived on every spawn (it is in preserve_relaunch_meta's owned list),
+  # so a relaunch into a repaired repository drops it rather than inheriting a
+  # stale answer.
   if [ "$COMMIT_BACKSTOP_STATE" != installed ]; then
     echo "commit_attribution_backstop=$COMMIT_BACKSTOP_STATE"
     echo "commit_attribution_backstop_reason=${COMMIT_BACKSTOP_REASON:-unknown}"

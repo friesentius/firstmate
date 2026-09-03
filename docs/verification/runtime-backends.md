@@ -337,12 +337,13 @@ Reading `git config --local --get core.hooksPath` is what avoids this, because t
 
 ### Coverage, and where it stops
 
-The deterministic backstop covers crewmate and scout task worktrees only.
-Secondmate agents get the advisory settings layer alone, through the tracked `.claude/settings.json` their home inherits, and that is the layer measured leaking above.
-So the gap is real rather than covered, and it is tracked separately as `fm-suppress-co-author-secondmates` rather than closed here.
-A secondmate task record says so in its own `commit_attribution_backstop=unsupported` field rather than staying silent, because the field's absence means an installed backstop and a silent record would claim one that was never there.
+The deterministic backstop now covers every spawn kind, including a secondmate's own home: a secondmate's home is itself a firstmate checkout it commits to directly (for instance when it edits firstmate's own shared tracked material with an empty fleet, AGENTS.md section 1), so `bin/fm-spawn.sh` installs the same hook there too.
+The install is idempotent and re-derived on every local or remote secondmate launch, relaunch, and recovery respawn, exactly like the crewmate/scout case, so a reused pooled slot or a stale prior install can never leave a secondmate trusting an answer from before.
+A remote secondmate gets it from the same code path: the remote host runs its own `fm-spawn.sh --secondmate` against its own home, which reaches the same install call.
+Secondmate agents also keep the advisory settings layer through the tracked `.claude/settings.json` their home inherits, but closing `fm-suppress-co-author-secondmates` means that layer is no longer the only protection.
+A secondmate task record's `commit_attribution_backstop` field now follows the same convention as every other kind: it is written only when the install was refused or failed, and its absence means the backstop is installed.
 
-A task worktree can also end up without the backstop when the install refuses, which it does on repository layouts unrelated to commit attribution.
+A task worktree - or a secondmate's home - can also end up without the backstop when the install refuses, which it does on repository layouts unrelated to commit attribution.
 `bin/fm-spawn.sh` degrades in that case instead of aborting the spawn, because losing a trailer guard must never cost the ability to dispatch at all.
 The degradation is never silent: the reason is reported on stderr, the task record at `state/<id>.meta` carries `commit_attribution_backstop` and `commit_attribution_backstop_reason`, and the worker's brief is told the no-agent-co-author rule explicitly, since for that task the instruction is the only protection left.
 Both the record field and the brief note are re-derived on every spawn rather than only added once, so a task relaunched into a repaired repository loses a note that no longer holds and one relaunched into a broken repository gains it.
