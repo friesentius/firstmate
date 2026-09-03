@@ -264,6 +264,119 @@ Two findings from the run shaped the shipped behavior: an OpenCode vendor update
 Kimi was not installed on the verification machine; its receive path is the same one-line-plus-shell contract, and the portable ladder and enqueue regressions in `tests/fm-task-inbox.test.sh` and `tests/fm-send-inbox.test.sh` cover every harness-independent half.
 This guard is the refresh command after any harness upgrade; it spends a small number of real tokens per installed harness, reports an absent harness explicitly, and refuses a run that verified nothing.
 
+## Commit attribution
+
+Claude Code appends a `Co-Authored-By` trailer to its own git commits by default, which `AGENTS.md` section 1 forbids.
+`bin/fm-spawn.sh` writes the suppression into every claude-harness crewmate and scout worktree, while the firstmate primary reads this repo's own tracked `.claude/settings.json` and each secondmate home, being a worktree of that repo, inherits the same tracked file.
+
+### Which key actually suppresses the trailer
+
+This was established on 2026-08-30 by reading the installed claude 2.1.251 (Claude Code) binary on Linux x86_64 at `~/.local/share/claude/versions/2.1.251`, not from the settings documentation.
+`grep -aob 'Co-Authored-By' ~/.local/share/claude/versions/2.1.251` returns two byte offsets, 92343392 and 183369569.
+Only 183369569 is code: it is the template literal inside the single function that decides the trailer text, quoted below.
+92343392 is the same text in the V8 code-cache string table, sitting alongside the other literals this function region uses (`Claude-Session: `, ` <noreply@anthropic.com>`, `attribution_texts`, `includeCoAuthoredBy`).
+`grep -aoc 'function UZn'` and `grep -aoc 'function EEn'` each return 1, so there is one implementation and no second emission site:
+
+```js
+function UZn(){let e=NDt(),t=`Co-Authored-By: ${BZn(at())} <noreply@anthropic.com>`,r=Je(),o=r.attribution;
+  if(o!==void 0&&EEn(o))return{commit:o.commit??t,pr:o.pr??e};
+  if(r.includeCoAuthoredBy===!1)return HDt().fire("attribution_texts"),{commit:"",pr:""};
+  return{commit:t,pr:e}}
+function EEn(e){return e!==void 0&&(e.commit!==void 0||e.pr!==void 0)}
+```
+
+`Je()` is `oS().settings||{}`, the raw merged settings with no normalization applied, so this reads exactly what the settings files contain.
+Two consequences follow, and the second one contradicts the settings documentation.
+
+First, `attribution.commit` set to the empty string satisfies `EEn` and wins outright, and `??` falls back only on null or undefined, so the empty string survives and the commit trailer is empty.
+
+Second, `attribution.commitTrailers` does NOT satisfy `EEn`, which tests only `commit` and `pr`, so it is inert on this path.
+`grep -aob 'commitTrailers'` returns seven offsets, and all of them are off the emission path: the settings schema allowlists (`br`, `Wr`, `Oo`), the managed-settings policy normalizer, the `pt` and `Se` helpers, and one telemetry key.
+A worktree given only `{"attribution":{"commitTrailers":false}}` therefore still gets the trailer on 2.1.251.
+
+`fm-spawn` writes `attribution.commit` and `includeCoAuthoredBy` for this reason, and deliberately does not write `commitTrailers`.
+The two keys cover different builds rather than duplicating each other: `attribution.commit` takes the modern path, while `includeCoAuthoredBy=false` is the branch 2.1.251 falls through to when no attribution object wins and is the only one older builds understand.
+Note that the `includeCoAuthoredBy` branch fires a `tengu_dead_probe_include_coauthored_by` telemetry probe, which reads as instrumentation for its removal, so the `attribution.commit` key is what should survive that removal.
+
+#### What the keys do to PR attribution
+
+PR body attribution is rendered by a different function than the commit trailer, so `UZn`'s `pr` return value is not what decides it.
+The PR path is `async function KZn(e,t,r,o){let u=D()?o:void 0,d=Je();if(d.attribution?.pr!==void 0)return d.attribution.pr;if(d.includeCoAuthoredBy===!1)return HDt().fire("pr_base"),"";...}` at byte offset 183372238.
+Tracing the exact JSON `fm-spawn` writes, `{"attribution":{"commit":""},"includeCoAuthoredBy":false}`: `d.attribution?.pr` is undefined so the first branch is skipped, `d.includeCoAuthoredBy===!1` is true, and `KZn` returns the empty string.
+So on 2.1.251 the shipped keys suppress the commit co-author trailer via `UZn` and ALSO empty the PR attribution text via `KZn`.
+This is an accepted consequence of using `includeCoAuthoredBy=false`, not an open defect: the requirement being enforced is that no agent name appears as a commit co-author, and emptying PR attribution conflicts with nothing that was asked for.
+Setting `attribution.pr` is the lever if PR attribution ever has to be restored, and it is deliberately not set now.
+
+### The settings alone are advisory, not a guarantee
+
+The mechanism is prompt-mediated, and this is the single most important fact in this record.
+Every consumer of the attribution text in 2.1.251 is a prompt-text builder, rendering it as an `End git commit messages with:` instruction; there is no mechanical append anywhere in the binary.
+`attribution.commit` set to the empty string therefore works by OMITTING that instruction from the system prompt, which leaves the model free to add the trailer from habit anyway.
+
+It does exactly that, at a measurable rate.
+Across six runs of the suppressed configuration on 2026-08-31 with claude 2.1.251, five produced no trailer and one produced a trailer: the live guard failed on its first run and passed on a re-run with byte-identical code.
+So the settings reduce the trailer without eliminating it, and no assertion that the settings alone always suppress it can be both honest and stable.
+
+### Deterministic backstop
+
+`bin/fm-git-hook-install.sh` installs `bin/fm-git-hook-proxy.sh` as the task worktree's `core.hooksPath`, and its `commit-msg` hook strips agent co-author trailers mechanically, independent of what the model does.
+That is what makes the rule deterministic rather than usually true, and it is enforced at the git layer, so it covers every harness and every launch mechanism rather than only claude.
+
+A linked worktree resolves hooks through the SHARED common directory - `git rev-parse --git-path hooks` in a worktree of this repo returns the common `.git/hooks` - so a plain hook file would fire in the captain's own checkout too.
+Per-worktree git config is what keeps it contained, and `tests/fm-git-hook-backstop.test.sh` asserts the primary checkout still emits what the task worktree strips.
+
+One part of the install is NOT worktree-scoped, and the earlier wording here overstated the containment.
+`core.hooksPath` is written in the worktree scope, but git honors a worktree's own config only once `extensions.worktreeConfig` is enabled, and that key is written into the project's SHARED config and is never unset, so it outlives the task worktree.
+The write is additive rather than behavioral: it only makes git read each worktree's own config file, and every other worktree's is empty, so no other checkout's hooks change.
+It is still a real, permanent change to the project's shared configuration, which is part of what the captain authorized as an exception to hard rule 1.
+The install refuses when `core.bare` or `core.worktree` sit in the shared config, because those are the settings git documents as unsafe to leave there once the extension is on.
+
+Two mechanics are worth recording because both were wrong on the first attempt and only testing caught them.
+`git rev-parse --git-path hooks` resolves THROUGH `core.hooksPath`, so once the backstop is installed it reports the backstop's own directory; deriving the project's original hooks directory from it makes a reinstall record itself and silently sever delegation to the project's hooks.
+Reading `git config --local --get core.hooksPath` is what avoids this, because the backstop's own value lives in the worktree scope and never appears in the local scope.
+
+### Coverage, and where it stops
+
+The deterministic backstop now covers every spawn kind, including a secondmate's own home: a secondmate's home is itself a firstmate checkout it commits to directly (for instance when it edits firstmate's own shared tracked material with an empty fleet, AGENTS.md section 1), so `bin/fm-spawn.sh` installs the same hook there too.
+The install is idempotent and re-derived on every local or remote secondmate launch, relaunch, and recovery respawn, exactly like the crewmate/scout case, so a reused pooled slot or a stale prior install can never leave a secondmate trusting an answer from before.
+A remote secondmate gets it from the same code path: the remote host runs its own `fm-spawn.sh --secondmate` against its own home, which reaches the same install call.
+Secondmate agents also keep the advisory settings layer through the tracked `.claude/settings.json` their home inherits, but closing `fm-suppress-co-author-secondmates` means that layer is no longer the only protection.
+A secondmate task record's `commit_attribution_backstop` field now follows the same convention as every other kind: it is written only when the install was refused or failed, and its absence means the backstop is installed.
+`tests/fm-secondmate-safety.test.sh`'s project-less home-seed test proves this behaviorally rather than only through the record field: it makes a real commit directly in the secondmate home with a forged agent co-author trailer and asserts the trailer comes out stripped while a genuine human co-author survives.
+
+A task worktree - or a secondmate's home - can also end up without the backstop when the install refuses, which it does on repository layouts unrelated to commit attribution.
+`bin/fm-spawn.sh` degrades in that case instead of aborting the spawn, because losing a trailer guard must never cost the ability to dispatch at all.
+The degradation is never silent: the reason is reported on stderr, the task record at `state/<id>.meta` carries `commit_attribution_backstop` and `commit_attribution_backstop_reason`, and the worker's brief is told the no-agent-co-author rule explicitly, since for that task the instruction is the only protection left.
+Both the record field and the brief note are re-derived on every spawn rather than only added once, so a task relaunched into a repaired repository loses a note that no longer holds and one relaunched into a broken repository gains it.
+
+### Live guard
+
+```sh
+FM_COMMIT_ATTRIBUTION_LIVE_E2E=1 tests/fm-commit-attribution-live-e2e.test.sh
+```
+
+Observed on 2026-08-31 against the committed guard, on Linux x86_64 with claude 2.1.251 (Claude Code):
+
+```
+ok - claude (2.1.251 (Claude Code)): the backstop deterministically removes the commit co-author trailer (control=1 settings-only=0 backstop=0 sentinel=present)
+```
+
+The guard runs four cases and asserts three of them.
+The control must emit at least one real trailer, so a vendor that stopped emitting them is reported rather than passed vacuously.
+The settings-only count is recorded but deliberately NOT asserted, because that path is the advisory one measured leaking above and a hard assertion on it would fail intermittently for a reason the backstop already covers.
+The backstop case is the hard assertion and must be zero, because that configuration is what production actually gets.
+The sentinel case sets `attribution.commit` to a run-time token and requires it in the commit message.
+
+What the sentinel proves is narrow and worth stating precisely, because an earlier version of this record overstated it.
+It proves `attribution.commit` is genuinely consulted and carried end to end into what the agent is told, which is what separates the live key from the schema-only `commitTrailers`.
+It does NOT prove the harness composed the trailer without the model's involvement: the token reaches the model through the same prompt section, so the mechanism is prompt-mediated there too.
+
+Settings are supplied from OUTSIDE the repository under test through claude's `--settings` flag, with the guard asserting the repo carries no `.claude` settings of its own before and after each run.
+That excludes a separate confound: an agent that reads a settings file sitting in its own working tree and complies with it voluntarily, which is what an earlier confounded run actually measured.
+
+The guard was also run with the attribution keys deleted from the generated settings in `bin/fm-spawn.sh`, to confirm it is not a guard that would pass either way, and it failed there.
+`tests/fm-spawn-commit-attribution.test.sh` and `tests/fm-git-hook-backstop.test.sh` were each mutation-tested the same way and each failed on the mutation.
+
 ## Herdr
 
 The compatibility floor is protocol 14.

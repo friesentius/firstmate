@@ -274,6 +274,7 @@ family_for_basename() {
     fm-sessionstart-hook-live-e2e.test.sh|fm-sessionstart-instruction-refresh-live-e2e.test.sh|\
     fm-quota-array-dispatch-live-e2e.test.sh|fm-send-secondmate-marker-herdr-e2e.test.sh|\
     fm-send-inbox-doorbell-live-e2e.test.sh|\
+    fm-commit-attribution-live-e2e.test.sh|\
     fm-herdr-submit-confirm-live-e2e.test.sh)
       printf '%s\n' live-harness-optin
       ;;
@@ -282,7 +283,8 @@ family_for_basename() {
     fm-control.test.sh|fm-control-relaunch.test.sh|\
     fm-herdr-session-cleanup.test.sh|fm-send-resolve-key.test.sh|fm-send-strict.test.sh|\
     fm-send-inbox.test.sh|fm-spawn-batch.test.sh|\
-    fm-spawn-dispatch-profile.test.sh|\
+    fm-git-hook-backstop.test.sh|\
+    fm-spawn-commit-attribution.test.sh|fm-spawn-dispatch-profile.test.sh|\
     fm-trace-context-spawn.test.sh|fm-spawn-worktree-settle.test.sh|\
     fm-teardown-endpoint-safety.test.sh)
       printf '%s\n' backend-dispatch
@@ -1207,7 +1209,16 @@ families_for_changed_path() {
     bin/fm-quota-choose.sh)
       printf '%s\n' "__script__:fm-quota-choose.test.sh"
       ;;
-    bin/fm-sessionstart-run.sh|.claude/settings.json|.codex/hooks.json|\
+    .claude/settings.json)
+      # The run tier's two harness-supplied facts (source vocabulary and
+      # context-reset stdout injection) only show up against a real harness.
+      # This file also carries firstmate's own commit-attribution suppression,
+      # asserted by fm-spawn-commit-attribution.test.sh in another family.
+      printf '%s\n' session-bootstrap
+      printf '%s\n' live-harness-optin
+      printf '%s\n' __script__:fm-spawn-commit-attribution.test.sh
+      ;;
+    bin/fm-sessionstart-run.sh|.codex/hooks.json|\
     .pi/extensions/fm-primary-turnend-guard.ts)
       # The run tier's two harness-supplied facts (source vocabulary and
       # context-reset stdout injection) only show up against a real harness.
@@ -1258,7 +1269,22 @@ families_for_changed_path() {
       printf '%s\n' pure-contract-unit
       printf '%s\n' live-harness-optin
       ;;
-    bin/fm-spawn.sh|bin/fm-send.sh|bin/fm-harness.sh|\
+    bin/fm-git-hook-install.sh|bin/fm-git-hook-proxy.sh)
+      # The deterministic commit-attribution backstop: its portable guard, and
+      # the live guard that exercises it against the real harness.
+      printf '%s\n' __script__:fm-git-hook-backstop.test.sh
+      printf '%s\n' __script__:fm-commit-attribution-live-e2e.test.sh
+      ;;
+    bin/fm-spawn.sh)
+      # The commit-attribution live guard runs a real fm-spawn and drives claude
+      # with the settings this script generates, so a change here should surface
+      # the post-upgrade refresh command alongside the portable families.
+      printf '%s\n' backend-dispatch
+      printf '%s\n' pure-contract-unit
+      printf '%s\n' __script__:fm-commit-attribution-live-e2e.test.sh
+      printf '%s\n' __script__:fm-git-hook-backstop.test.sh
+      ;;
+    bin/fm-send.sh|bin/fm-harness.sh|\
     bin/fm-peek.sh|bin/fm-composer*)
       printf '%s\n' backend-dispatch
       printf '%s\n' pure-contract-unit

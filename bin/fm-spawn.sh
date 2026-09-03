@@ -2553,12 +2553,71 @@ mkdir -p "$TASK_TMP/gotmp"
 mkdir -p "$STATE"
 STATE_REAL=$(cd "$STATE" && pwd -P)
 TURNEND="$STATE_REAL/$ID.turn-ended"
+# Delimiters of the brief note that states the no-agent-co-author rule when the
+# commit-attribution backstop is unavailable. The block is delimited at both
+# ends so it can be rewritten in place rather than only appended.
+COMMIT_BACKSTOP_BRIEF_MARKER='## Commit attribution (backstop unavailable)'
+COMMIT_BACKSTOP_BRIEF_END='<!-- end commit-attribution note -->'
+# Every task kind answers for the backstop, so an absent record field can never
+# be read as a backstop that is in place. Every kind's own worktree - a
+# crewmate/scout task worktree or a secondmate's home, which is itself a
+# firstmate checkout a secondmate commits to directly - gets the same install
+# attempt below; this default is overwritten with what that install actually
+# did.
+COMMIT_BACKSTOP_STATE=unsupported
+COMMIT_BACKSTOP_REASON='the installer was not reached before spawn completed'
 exclude_path() {
   local rel=$1 EXCL
   EXCL=$(git -C "$WT" rev-parse --git-path info/exclude 2>/dev/null || true)
   [ -n "$EXCL" ] || return 0
+  # git prints an absolute path for a linked worktree, but a plain relative
+  # one (".git/info/exclude") for a standalone clone - a secondmate home not
+  # leased from the treehouse pool is exactly that, so this cannot assume
+  # $EXCL resolves against the caller's own cwd.
+  case $EXCL in
+    /*) : ;;
+    *) EXCL="$WT/$EXCL" ;;
+  esac
   mkdir -p "$(dirname "$EXCL")"
   grep -qxF "$rel" "$EXCL" 2>/dev/null || echo "$rel" >> "$EXCL"
+}
+
+# Bring the brief's note in line with what this spawn actually found, in both
+# directions: a task relaunched into a repaired repository loses a note that no
+# longer holds, and one relaunched into a broken repository gains it. Repeated
+# spawns converge on exactly one block or none. A brief that carries no note and
+# needs none is left byte-identical.
+sync_commit_backstop_brief_note() {  # <brief>
+  local brief=$1 tmp
+  [ -f "$brief" ] || return 1
+  if [ "$COMMIT_BACKSTOP_STATE" = installed ] \
+     && ! grep -qF "$COMMIT_BACKSTOP_BRIEF_MARKER" "$brief" 2>/dev/null; then
+    return 0
+  fi
+  tmp="$brief.fm-backstop.${BASHPID:-$$}"
+  awk -v start="$COMMIT_BACKSTOP_BRIEF_MARKER" -v end="$COMMIT_BACKSTOP_BRIEF_END" '
+    BEGIN { skipping = 0; have = 0 }
+    {
+      if (skipping) { if ($0 == end) skipping = 0; next }
+      if ($0 == start) { skipping = 1; if (have && buf == "") have = 0; next }
+      if (have) print buf
+      buf = $0; have = 1
+    }
+    END { if (have) print buf }
+  ' "$brief" > "$tmp" 2>/dev/null || { rm -f -- "$tmp"; return 1; }
+  if [ "$COMMIT_BACKSTOP_STATE" != installed ]; then
+    {
+      printf '\n%s\n' "$COMMIT_BACKSTOP_BRIEF_MARKER"
+      printf 'The deterministic commit-attribution backstop could not be installed in this worktree (%s: %s).\n' \
+        "$COMMIT_BACKSTOP_STATE" "$COMMIT_BACKSTOP_REASON"
+      printf 'Nothing mechanical will remove it for you, so this is on you: never add an agent name as a commit co-author, and never add a Co-Authored-By trailer naming any agent or model to any commit you make.\n'
+      printf '%s\n' "$COMMIT_BACKSTOP_BRIEF_END"
+    } >> "$tmp" || { rm -f -- "$tmp"; return 1; }
+  fi
+  if ! cmp -s -- "$brief" "$tmp"; then
+    cat -- "$tmp" > "$brief" || { rm -f -- "$tmp"; return 1; }
+  fi
+  rm -f -- "$tmp"
 }
 if [ "$RELAUNCH" -eq 1 ]; then
   # Retire the previous incarnation's per-task harness wiring before arming the
@@ -2575,6 +2634,54 @@ if [ "$RELAUNCH" -eq 1 ]; then
   RELAUNCH_REPLACEMENT_STATE=$STATE_REAL
   RELAUNCH_REPLACEMENT_WT=$WT
 fi
+# Deterministic commit-attribution backstop, installed for EVERY harness and
+# EVERY kind - including a secondmate's own home, which is itself a firstmate
+# checkout a secondmate commits to directly - because it works at the git
+# layer rather than through any one vendor's settings. The per-harness
+# advisory settings written below (non-secondmate only) suppress the trailer
+# only by omitting an instruction from the model's prompt, which is advisory:
+# the measured leak is recorded in docs/verification/runtime-backends.md. This
+# hook is what makes "never add an agent name as a commit co-author"
+# deterministic rather than usually true. It is scoped to this worktree, it
+# delegates to the project's own hooks, and it re-derives its state on every
+# spawn so a reused pooled slot cannot inherit a stale answer
+# (bin/fm-git-hook-install.sh owns the guards and the exact mechanics).
+#
+# A backstop that cannot be installed must never cost this project the
+# ability to dispatch at all: the installer refuses on repository layouts
+# that have nothing to do with commit attribution (a shared core.worktree,
+# for one), and a cosmetic trailer risk is not worth total loss of dispatch.
+# So the spawn degrades instead of aborting, but never silently: the reason
+# goes to stderr, the gap is recorded on the task record so it is inspectable
+# long after the scrollback is gone, and the worker's own brief is told the
+# rule explicitly, because for that task the instruction is the only
+# protection left.
+COMMIT_BACKSTOP_STATE=installed
+COMMIT_BACKSTOP_REASON=
+# The installer creates .fm-git-hooks before several of its own failure
+# exits, so the exclusion has to hold whatever the install does. Excluding a
+# path that never appears is harmless; leaving it unexcluded lets a partial
+# install reach a worker's commit and block teardown's dirty check.
+exclude_path '.fm-git-hooks'
+if ! FM_HOOK_INSTALL_OUT=$("$FM_ROOT/bin/fm-git-hook-install.sh" "$WT" 2>&1); then
+  # Cheap classification only: the installer's own guardrails say "refusing
+  # to install", so anything else is an unexpected failure of the installer
+  # rather than a deliberate refusal.
+  case "$FM_HOOK_INSTALL_OUT" in
+    *"refusing to install the commit-attribution backstop"*) COMMIT_BACKSTOP_STATE=refused ;;
+    *) COMMIT_BACKSTOP_STATE=failed ;;
+  esac
+  COMMIT_BACKSTOP_REASON=$(printf '%s' "$FM_HOOK_INSTALL_OUT" | sed -n 's/^error: //p' | head -n 1 | tr -d '\r')
+  [ -n "$COMMIT_BACKSTOP_REASON" ] \
+    || COMMIT_BACKSTOP_REASON=$(printf '%s' "$FM_HOOK_INSTALL_OUT" | head -n 1 | tr -d '\r')
+  [ -n "$COMMIT_BACKSTOP_REASON" ] || COMMIT_BACKSTOP_REASON="the installer failed without a message"
+  echo "warning: task $ID is launching WITHOUT the deterministic commit-attribution backstop ($COMMIT_BACKSTOP_STATE): $COMMIT_BACKSTOP_REASON" >&2
+  printf '%s\n' "$FM_HOOK_INSTALL_OUT" >&2
+  echo "warning: the no-agent-co-author rule is instruction-only for $ID; it is stated in the brief and recorded on the task record" >&2
+fi
+sync_commit_backstop_brief_note "$BRIEF" \
+  || echo "warning: could not bring the commit-attribution note in $BRIEF up to date for $ID" >&2
+
 if [ "$KIND" != secondmate ]; then
   # Arm the semantic busy-state contract (bin/fm-busy-lib.sh) for every
   # adapter with a verified semantic source. The launch brief sent below IS a
@@ -2622,6 +2729,28 @@ if [ "$KIND" != secondmate ]; then
       # the turn-ended NOTIFICATION touch for the watcher. Every
       # hook command tolerates a refused event (|| true) so a stale-gen writer
       # can never break Claude's own lifecycle.
+      #
+      # Commit attribution: AGENTS.md section 1 forbids adding an agent name as
+      # a commit co-author, but Claude Code appends a Co-Authored-By trailer to
+      # its own git commits by default, so the suppression has to be configured
+      # here rather than asked for in the brief. Two independent keys are
+      # written because they cover different builds of the emission path. On
+      # claude 2.1.251 the trailer text is chosen by one function: an
+      # attribution object carrying a commit or pr value wins outright, so
+      # attribution.commit="" yields an empty commit trailer through the modern
+      # path; otherwise includeCoAuthoredBy=false suppresses it, and that is
+      # the branch 2.1.251 actually takes for a build with neither. Note that
+      # attribution.commitTrailers is accepted by the settings schema and read
+      # by the managed-settings policy normalizer, but is NOT consulted on the
+      # emission path, so it is not written here. PR body attribution is
+      # rendered by a different function than the commit trailer, and that one
+      # checks attribution.pr first and then short-circuits on
+      # includeCoAuthoredBy=false. attribution.pr is left unset, so on 2.1.251
+      # these keys also empty the PR attribution text. That is an accepted
+      # consequence of includeCoAuthoredBy=false, not an oversight: the rule
+      # being enforced is about commit co-authors, and nothing here requires PR
+      # attribution. Setting attribution.pr is the lever if it ever has to come
+      # back.
       mkdir -p "$WT/.claude"
       busy_cmd_prefix="$(shell_quote "$FM_ROOT/bin/fm-busy-event.sh") apply $(shell_quote "$STATE_REAL") $(shell_quote "$ID")"
       busy_suffix="--gen $(shell_quote "$BUSY_GEN") --source claude-hook"
@@ -2630,7 +2759,7 @@ if [ "$KIND" != secondmate ]; then
       j_stopfail=$(json_escape "$busy_cmd_prefix idle $busy_suffix --event stop-failure 2>/dev/null || true")
       j_sessionend=$(json_escape "$busy_cmd_prefix idle $busy_suffix --event session-end 2>/dev/null || true")
       cat > "$WT/.claude/settings.local.json" <<EOF
-{"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"$j_submit"}]}],"Stop":[{"hooks":[{"type":"command","command":"$j_stop"}]}],"StopFailure":[{"hooks":[{"type":"command","command":"$j_stopfail"}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"$j_sessionend"}]}]}}
+{"attribution":{"commit":""},"includeCoAuthoredBy":false,"hooks":{"UserPromptSubmit":[{"hooks":[{"type":"command","command":"$j_submit"}]}],"Stop":[{"hooks":[{"type":"command","command":"$j_stop"}]}],"StopFailure":[{"hooks":[{"type":"command","command":"$j_stopfail"}]}],"SessionEnd":[{"hooks":[{"type":"command","command":"$j_sessionend"}]}]}}
 EOF
       exclude_path '.claude/settings.local.json'
       ;;
@@ -2911,7 +3040,7 @@ SPAWN_META_PATH=$SPAWN_META_TMP
 preserve_relaunch_meta() {
   awk -F= '
     BEGIN {
-      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
+      split("window endpoint_task_id worktree project harness kind mode yolo tasktmp model effort busy_gen commit_attribution_backstop commit_attribution_backstop_reason spawn_gen traceparent backend herdr_session herdr_workspace_id herdr_tab_id herdr_pane_id zellij_session zellij_tab_id zellij_pane_id orca_worktree_id terminal cmux_workspace_id cmux_surface_id home projects control_relaunch_tx", keys, " ")
       for (i in keys) owned[keys[i]] = 1
     }
     !($1 in owned)
@@ -2930,6 +3059,17 @@ preserve_relaunch_meta() {
   echo "model=${MODEL:-default}"
   echo "effort=${EFFORT:-default}"
   [ -z "${BUSY_GEN:-}" ] || echo "busy_gen=$BUSY_GEN"
+  # Written only when the deterministic backstop is NOT in place, so the
+  # default record stays byte-identical and the field's presence IS the gap.
+  # Every kind, including secondmate, sets the state explicitly, so an absent
+  # field means an installed backstop rather than an unanswered question.
+  # Re-derived on every spawn (it is in preserve_relaunch_meta's owned list),
+  # so a relaunch into a repaired repository drops it rather than inheriting a
+  # stale answer.
+  if [ "$COMMIT_BACKSTOP_STATE" != installed ]; then
+    echo "commit_attribution_backstop=$COMMIT_BACKSTOP_STATE"
+    echo "commit_attribution_backstop_reason=${COMMIT_BACKSTOP_REASON:-unknown}"
+  fi
   echo "spawn_gen=$SPAWN_GEN"
   # Default-off writes no traceparent= line.
   # backend= is written only for a non-default (non-tmux) backend, so the
