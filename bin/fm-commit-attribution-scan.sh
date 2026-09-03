@@ -12,12 +12,30 @@
 # checkout controls:
 #
 #   - .github/workflows/ci.yml's "Commit attribution" job, given the pull
-#     request's exact base and head SHAs by the pull_request event.
+#     request's exact base and head SHAs by the pull_request event. Since
+#     GitHub runs a pull_request-triggered job's own DEFINITION from the PR's
+#     branch (not the base branch), pinning this script's content does not
+#     pin the CI job's existence: a PR could still remove or alter the job in
+#     ci.yml itself, and this repo currently has no branch protection
+#     requiring any CI job to pass before merge. That is a real, structural
+#     gap shared by every job in this workflow, not specific to this script.
 #   - .no-mistakes.yaml's commands.lint, chained after bin/fm-lint.sh.
 #     kunchenguid/no-mistakes's repo-config reference documents that
 #     commands.* is read only from the repository's trusted default-branch
 #     copy of .no-mistakes.yaml, never from a pushed branch, so once this
 #     lands on main a contributor cannot weaken or remove it from their PR.
+#
+# Neither surface runs this script as it exists in the checkout under
+# validation: both fetch this script's content from the trusted base ref
+# (`git show <base-sha>:bin/fm-commit-attribution-scan.sh`) into a temp file
+# and execute that instead, so a PR cannot defeat the check by editing its own
+# copy of this script (for example to `exit 0`). When the base ref predates
+# this script's existence (true only until this first lands on the default
+# branch), both surfaces fall back to the working-tree copy with a visible
+# warning, since there is no trusted copy to fetch yet. This still leaves the
+# ci.yml job-definition gap above: fetching the script content raises the bar
+# from "edit one obscure regex" to "edit or delete a whole CI job," which is a
+# more conspicuous change for review to catch, but it does not close the gap.
 #
 # no-mistakes has no generic custom-gate/step hook as of this writing (only
 # named steps, with commands.{test,lint,format} letting you override a named
@@ -28,7 +46,10 @@
 # Only known agent-vendor addresses are matched in a `Co-Authored-By:`
 # trailer, never every such trailer, so a legitimate human co-author survives.
 # Extend FM_AGENT_COAUTHOR_ADDRESSES (space- or newline-separated) with
-# evidence when another harness is verified to emit one.
+# evidence when another harness is verified to emit one. A value that resolves
+# to zero addresses after word-splitting (unset, empty, or whitespace-only) is
+# refused with a nonzero exit rather than silently scanning nothing and
+# reporting a clean pass.
 #
 # Known limitation: a PR that never reaches either surface above (for example
 # one opened by a route that skips both CI and the no-mistakes gate) is not
@@ -77,6 +98,39 @@ esac
 
 FM_AGENT_COAUTHOR_ADDRESSES=${FM_AGENT_COAUTHOR_ADDRESSES:-noreply@anthropic.com}
 
+# Word-splitting FM_AGENT_COAUTHOR_ADDRESSES is the intended way to accept a
+# space- or newline-separated address list.
+AGENT_ADDRESSES=()
+# shellcheck disable=SC2086
+for address in $FM_AGENT_COAUTHOR_ADDRESSES; do
+  [ -n "$address" ] || continue
+  AGENT_ADDRESSES+=("$address")
+done
+
+if [ "${#AGENT_ADDRESSES[@]}" -eq 0 ]; then
+  printf 'fm-commit-attribution-scan.sh: FM_AGENT_COAUTHOR_ADDRESSES resolved to zero addresses after word-splitting; refusing to scan with an empty match list instead of silently reporting a clean pass.\n' >&2
+  exit 2
+fi
+
+fm_cas_escape_ere() {
+  local s=$1
+  s=${s//\\/\\\\}
+  s=${s//./\\.}
+  s=${s//\*/\\*}
+  s=${s//^/\\^}
+  s=${s//\$/\\$}
+  s=${s//(/\\(}
+  s=${s//)/\\)}
+  s=${s//+/\\+}
+  s=${s//\?/\\?}
+  s=${s//\{/\\\{}
+  s=${s//\}/\\\}}
+  s=${s//|/\\|}
+  s=${s//[/\\[}
+  s=${s//]/\\]}
+  printf '%s' "$s"
+}
+
 if [ "$#" -eq 0 ]; then
   if git rev-parse --verify -q origin/main >/dev/null 2>&1; then
     base_ref=origin/main
@@ -124,13 +178,9 @@ checked=0
 for sha in "${COMMITS[@]}"; do
   checked=$((checked + 1))
   msg=$(git log -1 --format=%B "$sha" 2>/dev/null) || continue
-  # Word-splitting FM_AGENT_COAUTHOR_ADDRESSES is the intended way to accept a
-  # space- or newline-separated address list.
-  # shellcheck disable=SC2086
-  for address in $FM_AGENT_COAUTHOR_ADDRESSES; do
-    [ -n "$address" ] || continue
+  for address in "${AGENT_ADDRESSES[@]}"; do
     match=$(printf '%s\n' "$msg" \
-      | grep -iE "^[[:space:]]*Co-Authored-By:.*<${address//./\\.}>[[:space:]]*\$") || continue
+      | grep -iE "^[[:space:]]*Co-Authored-By:.*<$(fm_cas_escape_ere "$address")>[[:space:]]*\$") || continue
     subject=$(git log -1 --format=%s "$sha" 2>/dev/null)
     printf 'fm-commit-attribution-scan.sh: agent co-author trailer in %s (%s): %s\n' \
       "$(git rev-parse --short "$sha")" "$subject" "$match" >&2

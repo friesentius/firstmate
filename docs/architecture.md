@@ -218,9 +218,12 @@ Independently, `fm-spawn.sh`, `fm-send.sh`, `fm-control.sh`, and `fm-teardown.sh
 A normal primary checkout or crewmate worktree has neither signal and remains unaffected.
 The helper's header owns the exact signal detection, relocated-home limitation, test-harness bypass, and relationship to no-mistakes' HEAD-continuity guard.
 
-The same trusted-default-branch pattern backstops AGENTS.md section 1's no-agent-co-author commit rule: `.no-mistakes.yaml`'s `commands.lint` chains `bin/fm-commit-attribution-scan.sh` after `bin/fm-lint.sh`, and `commands.*` is honored only from the trusted default-branch copy, so a pushed branch cannot weaken or remove it once merged.
-`.github/workflows/ci.yml`'s "Commit attribution" job runs the same script independently, given the PR's exact base/head SHAs.
-no-mistakes has no generic custom-gate hook beyond overriding a named step's own command (`commands.{test,lint,format}`), so both integrations reuse the lint step rather than adding a new one; the script's own header owns the exact matching rule and documented limitations.
+The same trusted-default-branch pattern backstops AGENTS.md section 1's no-agent-co-author commit rule: `.no-mistakes.yaml`'s `commands.lint` chains a commit-attribution check after `bin/fm-lint.sh`, and `commands.*` is honored only from the trusted default-branch copy, so a pushed branch cannot weaken or remove it once merged.
+That trust covers only the `commands.lint` command string itself, not the content of any script file it calls, so the chained logic fetches `bin/fm-commit-attribution-scan.sh`'s content from the trusted base ref (`git show <base-ref>:bin/fm-commit-attribution-scan.sh`) into a temp file and runs that instead of the pushed branch's own working-tree copy - a pushed branch cannot defeat the check by editing the script itself.
+`.github/workflows/ci.yml`'s "Commit attribution" job runs the same trusted-base-ref fetch independently, given the PR's exact base/head SHAs.
+Both surfaces fall back to running the working-tree copy, with a visible warning, only when the base ref predates the script's existence (true only until it first lands on the default branch).
+This does not pin the CI job's own definition: GitHub runs a `pull_request`-triggered job's definition from the PR's own branch, not the base branch, so a PR could still remove or alter the "Commit attribution" job in `ci.yml`, and this repo currently has no branch protection requiring any CI job to pass before merge - a structural gap shared by every job in that workflow, not specific to this check.
+no-mistakes has no generic custom-gate hook beyond overriding a named step's own command (`commands.{test,lint,format}`), so both integrations reuse the lint step rather than adding a new one; the script's own header owns the exact matching rule, the trusted-base-ref fetch mechanics, and documented limitations.
 
 ## Two task shapes
 

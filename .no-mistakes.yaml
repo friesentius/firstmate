@@ -29,13 +29,21 @@ document:
 # `.github/workflows/ci.yml` invokes it directly, with parity asserted by
 # `tests/fm-lint.test.sh` and `tests/fm-lint-workflows.test.sh`.
 #
-# Chained after it: bin/fm-commit-attribution-scan.sh, the non-bypassable
-# backstop for AGENTS.md section 1's no-agent-co-author rule. commands.lint is
-# read only from this file's trusted default-branch copy (kunchenguid/no-mistakes
-# repo-config reference, "gate-control fields are read from the default
-# branch"), so once this lands on main a contributor's pushed branch cannot
-# weaken or remove it. `.github/workflows/ci.yml`'s "Commit attribution" job
-# runs the same script independently, with the PR's exact base/head SHAs.
+# Chained after it: the non-bypassable backstop for AGENTS.md section 1's
+# no-agent-co-author rule. commands.lint is read only from this file's trusted
+# default-branch copy (kunchenguid/no-mistakes repo-config reference,
+# "gate-control fields are read from the default branch"), so once this lands
+# on main a contributor's pushed branch cannot weaken or remove it. That
+# trust, however, covers only this command STRING, not the content of any
+# script file it calls - so the chained logic below fetches
+# bin/fm-commit-attribution-scan.sh's content from the trusted base ref
+# (`git show <base-ref>:bin/fm-commit-attribution-scan.sh`) and runs that
+# instead of the working-tree copy, falling back to the working-tree copy
+# (with a visible warning) only when the base ref predates the script's
+# existence. `.github/workflows/ci.yml`'s "Commit attribution" job runs the
+# same script independently, with the same trusted-base-ref fetch, given the
+# PR's exact base/head SHAs. See the script's own header for the full
+# mechanics and residual limitations.
 #
 # Do not set commands.test to a complete tests/*.test.sh walk. Local no-mistakes
 # Test is intent-targeted validation of whether the change meets its brief;
@@ -43,7 +51,22 @@ document:
 # security, Herdr, tmux, and lifecycle coverage). A full-suite override here
 # would duplicate CI and defeat the targeted Test contract.
 commands:
-  lint: 'bin/fm-lint.sh && bin/fm-commit-attribution-scan.sh'
+  lint: |
+    set -e
+    bin/fm-lint.sh
+    base_ref=$(git rev-parse --verify -q origin/main 2>/dev/null) || base_ref=$(git rev-parse --verify -q main 2>/dev/null) || {
+      echo "fm-commit-attribution-scan.sh: could not resolve origin/main or main as a trusted base ref." >&2
+      exit 2
+    }
+    trusted_script=$(mktemp "${TMPDIR:-/tmp}/fm-commit-attribution-scan.trusted.XXXXXX")
+    trap 'rm -f "$trusted_script"' EXIT
+    if git show "$base_ref:bin/fm-commit-attribution-scan.sh" > "$trusted_script" 2>/dev/null; then
+      chmod +x "$trusted_script"
+      "$trusted_script"
+    else
+      echo "fm-commit-attribution-scan.sh: not found at trusted base $base_ref (expected only while this script is new, before it first lands on the default branch); falling back to the working-tree copy, which is not trust-pinned." >&2
+      bin/fm-commit-attribution-scan.sh
+    fi
 
 # Publish each run's test evidence to the orphan no-mistakes/evidence branch linked from the PR.
 # The evidence is not committed to the feature or default branch.

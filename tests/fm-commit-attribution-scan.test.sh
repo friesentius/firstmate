@@ -130,6 +130,28 @@ test_custom_address_list() {
   pass "FM_AGENT_COAUTHOR_ADDRESSES extends the matched address list"
 }
 
+test_whitespace_only_address_list_fails_closed() {
+  local tmp
+  tmp=$(fm_test_tmproot fm-cas-whitespace-addrs)
+  fm_cas_repo "$tmp"
+  git -C "$tmp" checkout -qb feature
+  printf 'two\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "$(printf 'bad commit\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n')"
+
+  local rc=0 out
+  out=$(cd "$tmp" && FM_AGENT_COAUTHOR_ADDRESSES=' ' "$SCAN" main feature 2>&1) || rc=$?
+  expect_code 2 "$rc" "a whitespace-only address list must fail closed, not pass silently"
+  assert_contains "$out" "zero addresses" \
+    "whitespace-only address list did not name the zero-addresses cause"
+  case "$out" in
+    *"no agent co-author trailers found"*)
+      fail "whitespace-only address list must never report a clean pass, even with a real agent trailer present"
+      ;;
+  esac
+  pass "a whitespace-only FM_AGENT_COAUTHOR_ADDRESSES fails closed instead of scanning nothing"
+}
+
 test_unresolvable_base_fails_closed() {
   local tmp
   tmp=$(fm_test_tmproot fm-cas-unresolvable)
@@ -187,6 +209,7 @@ test_lowercase_trailer_label_matches
 test_human_coauthor_survives
 test_prose_mention_does_not_false_positive
 test_custom_address_list
+test_whitespace_only_address_list_fails_closed
 test_unresolvable_base_fails_closed
 test_empty_range_is_a_clean_pass
 test_no_args_mode_uses_local_main_merge_base
