@@ -218,6 +218,10 @@ Independently, `fm-spawn.sh`, `fm-send.sh`, `fm-control.sh`, and `fm-teardown.sh
 A normal primary checkout or crewmate worktree has neither signal and remains unaffected.
 The helper's header owns the exact signal detection, relocated-home limitation, test-harness bypass, and relationship to no-mistakes' HEAD-continuity guard.
 
+The same trusted-default-branch pattern backstops AGENTS.md section 1's no-agent-co-author commit rule: `.no-mistakes.yaml`'s `commands.lint` chains `bin/fm-commit-attribution-scan.sh` after `bin/fm-lint.sh`, and `commands.*` is honored only from the trusted default-branch copy, so a pushed branch cannot weaken or remove it once merged.
+`.github/workflows/ci.yml`'s "Commit attribution" job runs the same script independently, given the PR's exact base/head SHAs.
+no-mistakes has no generic custom-gate hook beyond overriding a named step's own command (`commands.{test,lint,format}`), so both integrations reuse the lint step rather than adding a new one; the script's own header owns the exact matching rule and documented limitations.
+
 ## Two task shapes
 
 Ship tasks change projects and ship by project mode (`no-mistakes`, `direct-PR`, or `local-only`); scout tasks leave standalone investigation reports at `data/<id>/report.md` and never push.

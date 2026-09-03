@@ -31,6 +31,24 @@ jobs:
       # fails locally before merge.
       - run: bin/fm-lint.sh
 
+  # Server-side backstop for AGENTS.md section 1's "never add an agent name as
+  # a commit co-author": a local commit-msg hook only runs on the machine that
+  # makes the commit and is bypassable with `git commit --no-verify` or a
+  # rebase, so this re-checks every commit message actually reaching the PR,
+  # independent of how it got there. bin/fm-commit-attribution-scan.sh owns the
+  # exact matching rule and its documented limitations. Runs only on
+  # pull_request events, which is the only trigger carrying a PR base/head SHA
+  # pair; a push to main has already been through this check on its PR.
+  commit-attribution:
+    name: Commit attribution
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - run: bin/fm-commit-attribution-scan.sh "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
+
   # Deterministic proof that portable parallel shards + portable serial + Herdr
   # equal the complete tests/*.test.sh inventory with no missing or duplicates,
   # and that the portable serial CI shards partition that serial lane exactly.

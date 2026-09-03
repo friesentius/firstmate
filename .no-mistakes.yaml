@@ -29,13 +29,21 @@ document:
 # `.github/workflows/ci.yml` invokes it directly, with parity asserted by
 # `tests/fm-lint.test.sh` and `tests/fm-lint-workflows.test.sh`.
 #
+# Chained after it: bin/fm-commit-attribution-scan.sh, the non-bypassable
+# backstop for AGENTS.md section 1's no-agent-co-author rule. commands.lint is
+# read only from this file's trusted default-branch copy (kunchenguid/no-mistakes
+# repo-config reference, "gate-control fields are read from the default
+# branch"), so once this lands on main a contributor's pushed branch cannot
+# weaken or remove it. `.github/workflows/ci.yml`'s "Commit attribution" job
+# runs the same script independently, with the PR's exact base/head SHAs.
+#
 # Do not set commands.test to a complete tests/*.test.sh walk. Local no-mistakes
 # Test is intent-targeted validation of whether the change meets its brief;
 # .github/workflows/ci.yml owns broad regression (behavior suite, platform,
 # security, Herdr, tmux, and lifecycle coverage). A full-suite override here
 # would duplicate CI and defeat the targeted Test contract.
 commands:
-  lint: 'bin/fm-lint.sh'
+  lint: 'bin/fm-lint.sh && bin/fm-commit-attribution-scan.sh'
 
 # Publish each run's test evidence to the orphan no-mistakes/evidence branch linked from the PR.
 # The evidence is not committed to the feature or default branch.
