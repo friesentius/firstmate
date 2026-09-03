@@ -342,6 +342,7 @@ The install is idempotent and re-derived on every local or remote secondmate lau
 A remote secondmate gets it from the same code path: the remote host runs its own `fm-spawn.sh --secondmate` against its own home, which reaches the same install call.
 Secondmate agents also keep the advisory settings layer through the tracked `.claude/settings.json` their home inherits, but closing `fm-suppress-co-author-secondmates` means that layer is no longer the only protection.
 A secondmate task record's `commit_attribution_backstop` field now follows the same convention as every other kind: it is written only when the install was refused or failed, and its absence means the backstop is installed.
+`tests/fm-secondmate-safety.test.sh`'s project-less home-seed test proves this behaviorally rather than only through the record field: it makes a real commit directly in the secondmate home with a forged agent co-author trailer and asserts the trailer comes out stripped while a genuine human co-author survives.
 
 A task worktree - or a secondmate's home - can also end up without the backstop when the install refuses, which it does on repository layouts unrelated to commit attribution.
 `bin/fm-spawn.sh` degrades in that case instead of aborting the spawn, because losing a trailer guard must never cost the ability to dispatch at all.
