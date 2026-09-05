@@ -2362,6 +2362,7 @@ EOF
 
 task_set_lock_path() {  # <state-dir>
   local state=$1
+  # shellcheck source=/dev/null
   ( . "$ROOT/bin/fm-wake-lib.sh"; fm_task_set_lock_path "$state" )
 }
 
