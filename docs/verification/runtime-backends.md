@@ -588,6 +588,32 @@ HERDR_LAB_HELPER=bin/fm-herdr-lab.sh \
 
 Observed guarantee: one exact home-local, journal-correlated, one-tab and one-pane childless idle shell was closed after restoration while the exact non-target focus and default fleet session remained unchanged, and a repeat run was a no-op.
 
+### Project workspace grouping
+
+`config/herdr-presentation-spaces=project` groups every task for one project into that project's own durable, persisted-record-verified workspace instead of either the per-home or the disposable per-task topologies above.
+This suite ran on 2026-09-11 against Herdr 0.8.2 protocol 20 in an isolated `fm-lab-` session:
+
+```sh
+HERDR_LAB_HELPER=bin/fm-herdr-lab.sh \
+  tests/fm-backend-herdr-project-workspace-e2e.test.sh
+```
+
+Observed guarantees:
+
+```text
+ok - real herdr E2E: project grouping spawns cm1 into project alpha's shared workspace
+ok - real herdr E2E: cm1 landed in the persisted project-alpha workspace with a correct record
+ok - real herdr E2E: cm2, a second task for the SAME project, lands in cm1's own shared workspace
+ok - real herdr E2E: project beta gets its own workspace, never the pre-existing decoy sharing its label
+ok - real herdr E2E: tearing down cm1 leaves project alpha's still-populated workspace and cm2 untouched
+ok - real herdr E2E: tearing down cm2, project alpha's last task, removes the drained shared workspace
+ok - real herdr E2E: a spawn into a drained project self-heals with a fresh workspace and a rewritten record
+ok - real herdr E2E: project beta's workspace and task were never affected by project alpha's teardown/self-heal
+```
+
+Portable regressions in `tests/fm-backend-herdr.test.sh` (config parsing, floor-warning wording, the persisted-record format, and a fake-CLI create/adopt/self-heal cycle) pin the same contract with no herdr binary required.
+The version-floor gate reuses `fm_backend_herdr_presentation_default_supported`/`fm_backend_herdr_presentation_floor_warn` unchanged except for a `project`-labeled wording branch: unlike the disposable per-task projection's `on` override, an explicit `project` choice has no floor bypass, so a below-floor home always falls back to the ordinary flat per-home layout with one warning.
+
 ### Workspace-removal focus safety
 
 The focus-flash regression ran on 2026-08-05 against both Herdr 0.7.5 protocol 17 and Herdr 0.8.0 protocol 19 on macOS aarch64, with the 0.7.5 run using the pinned upstream release binary first on `PATH`:

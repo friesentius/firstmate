@@ -1231,6 +1231,193 @@ test_presentation_preference_reports_three_distinct_states() {
   pass "herdr presentation: config parsing separates a deliberate choice from an unconfigured default"
 }
 
+# --- project workspace grouping: config value, floor wording, record format,
+# and the create/adopt/self-heal container-resolution contract --------------
+
+test_presentation_preference_reports_project_grouping() {
+  local dir config got
+  dir="$TMP_ROOT/presentation-preference-project"; config="$dir/config"; mkdir -p "$config"
+  preference() {
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_presentation_preference "$1"' "$ROOT" "$1" 2>/dev/null
+  }
+  printf 'project\n' > "$config/herdr-presentation-spaces"
+  got=$(preference "$config")
+  [ "$got" = project ] || fail "an explicit project must report project, got '$got'"
+  printf '  PROJECT  \n' > "$config/herdr-presentation-spaces"
+  got=$(preference "$config")
+  [ "$got" = project ] || fail "project must be case-insensitive and whitespace-tolerant, got '$got'"
+  pass "herdr presentation: config parsing recognizes the project-grouping value"
+}
+
+test_presentation_unrecognized_value_warning_mentions_project() {
+  local dir config stderr
+  dir="$TMP_ROOT/presentation-preference-unrecognized-project-hint"; config="$dir/config"; mkdir -p "$config"
+  stderr="$dir/unrecognized.err"
+  printf 'bogus\n' > "$config/herdr-presentation-spaces"
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_presentation_preference "$1"' "$ROOT" "$config" >/dev/null 2>"$stderr"
+  assert_contains "$(cat "$stderr")" 'project' \
+    "the unrecognized-value warning should mention project grouping as a valid value"
+  pass "herdr presentation: the unrecognized-value warning names project grouping as a valid choice"
+}
+
+test_presentation_enabled_project_never_projects_and_never_calls_herdr() {
+  local dir config out
+  dir="$TMP_ROOT/presentation-enabled-project"; config="$dir/config"; mkdir -p "$config" "$dir/empty-fakebin"
+  printf 'project\n' > "$config/herdr-presentation-spaces"
+  out=$(PATH="$dir/empty-fakebin:/usr/bin:/bin" bash -c '
+    . "$0/bin/backends/herdr.sh"
+    if fm_backend_herdr_presentation_enabled "$1"; then printf "on\n"; else printf "off\n"; fi
+    printf "%s\n" "$FM_BACKEND_HERDR_PRESENTATION_PREFERENCE"
+  ' "$ROOT" "$config")
+  [ "$(printf '%s\n' "$out" | sed -n 1p)" = off ] \
+    || fail "config=project must never enable per-task presentation projection"
+  [ "$(printf '%s\n' "$out" | sed -n 2p)" = project ] \
+    || fail "config=project must set FM_BACKEND_HERDR_PRESENTATION_PREFERENCE=project"
+  pass "fm_backend_herdr_presentation_enabled: config=project reports off and needs no herdr call at all - no floor check at this gate, since bin/fm-spawn.sh runs its own for project grouping"
+}
+
+test_presentation_floor_warn_project_feature_has_no_override_hint() {
+  local out
+  out=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_presentation_floor_warn "" 1 project' "$ROOT" 2>&1)
+  assert_contains "$out" "project workspace grouping" \
+    "the project-feature floor warning must name project workspace grouping"
+  case "$out" in
+    *'write "on"'*) fail "project workspace grouping has no floor override; the warning must not suggest writing \"on\": $out" ;;
+  esac
+  assert_contains "$out" "Upgrade herdr to $AT_FLOOR_VERSION" \
+    "the project-feature floor warning must still tell the captain how to upgrade"
+  pass "fm_backend_herdr_presentation_floor_warn: the project feature names project workspace grouping and offers no floor override"
+}
+
+test_presentation_floor_warn_default_feature_wording_unchanged() {
+  local out
+  out=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_presentation_floor_warn "" 1' "$ROOT" 2>&1)
+  assert_contains "$out" "floor for presentation spaces" \
+    "the default (presentation) feature wording must be preserved"
+  assert_contains "$out" 'write "on"' \
+    "the default (presentation) feature must still offer its explicit-on override"
+  pass "fm_backend_herdr_presentation_floor_warn: omitting <feature> preserves the original presentation-spaces wording"
+}
+
+test_project_key_sanitize_accepts_and_rejects() {
+  local ok
+  sanitize_key() { bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_key_sanitize "$1"' "$ROOT" "$1"; }
+  ok=$(sanitize_key "my-project_1.2") || fail "a normal alnum/dash/underscore/dot key should be accepted"
+  [ "$ok" = "my-project_1.2" ] || fail "sanitize must echo the key unchanged when valid, got '$ok'"
+  sanitize_key "" >/dev/null 2>&1 && fail "an empty key must be rejected"
+  sanitize_key ".hidden" >/dev/null 2>&1 && fail "a leading-dot key must be rejected"
+  sanitize_key "has space" >/dev/null 2>&1 && fail "a key containing whitespace must be rejected"
+  sanitize_key "../escape" >/dev/null 2>&1 && fail "a path-traversal-shaped key must be rejected"
+  sanitize_key "slash/in/it" >/dev/null 2>&1 && fail "a key containing a slash must be rejected"
+  pass "fm_backend_herdr_project_key_sanitize: accepts safe keys and rejects empty, leading-dot, whitespace, and slash-bearing keys"
+}
+
+test_project_workspace_label_format() {
+  local out
+  out=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_label myproj' "$ROOT")
+  [ "$out" = "proj-myproj" ] || fail "project workspace label must be 'proj-<key>', got '$out'"
+  pass "fm_backend_herdr_project_workspace_label: formats as 'proj-<project-key>'"
+}
+
+test_project_workspace_record_round_trip() {
+  local dir state home out status
+  dir="$TMP_ROOT/project-record-round-trip"; state="$dir/state"; home="$dir/home"
+  mkdir -p "$state" "$home"
+  home=$(cd "$home" && pwd -P)
+  out=$(bash -c '
+    . "$0/bin/backends/herdr.sh"
+    record=$(fm_backend_herdr_project_workspace_record_path "$1" myproj)
+    fm_backend_herdr_project_workspace_record_write "$record" myproj "$2" sess1 w7 proj-myproj || exit 1
+    fm_backend_herdr_project_workspace_record_snapshot "$record" myproj || exit 1
+    printf "%s\n%s\n%s\n%s\n" \
+      "$FM_BACKEND_HERDR_PROJECT_HOME" "$FM_BACKEND_HERDR_PROJECT_SESSION" \
+      "$FM_BACKEND_HERDR_PROJECT_WORKSPACE_ID" "$FM_BACKEND_HERDR_PROJECT_LABEL"
+  ' "$ROOT" "$state" "$home")
+  status=$?
+  [ "$status" -eq 0 ] || fail "project workspace record write/read round trip failed"
+  [ "$(printf '%s\n' "$out" | sed -n 1p)" = "$home" ] || fail "record round trip lost its home field"
+  [ "$(printf '%s\n' "$out" | sed -n 2p)" = sess1 ] || fail "record round trip lost its session field"
+  [ "$(printf '%s\n' "$out" | sed -n 3p)" = w7 ] || fail "record round trip lost its workspace_id field"
+  [ "$(printf '%s\n' "$out" | sed -n 4p)" = proj-myproj ] || fail "record round trip lost its label field"
+  [ "$(wc -l < "$state/proj-myproj.herdr-workspace" | tr -d '[:space:]')" = 5 ] \
+    || fail "project workspace record must contain exactly 5 fields"
+  pass "fm_backend_herdr_project_workspace_record_write/_snapshot: round-trips project, home, session, workspace id, and label"
+}
+
+test_project_workspace_record_snapshot_rejects_corruption() {
+  local dir state record
+  dir="$TMP_ROOT/project-record-corruption"; state="$dir/state"; mkdir -p "$state"
+  record="$state/proj-myproj.herdr-workspace"
+
+  printf 'project=myproj\nhome=relative/path\nsession=sess1\nworkspace_id=w1\nlabel=proj-myproj\n' > "$record"
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj' "$ROOT" "$record" \
+    && fail "a non-absolute home must be rejected"
+
+  printf 'project=myproj\nhome=/abs\nsession=sess 1\nworkspace_id=w1\nlabel=proj-myproj\n' > "$record"
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj' "$ROOT" "$record" \
+    && fail "whitespace inside the session field must be rejected"
+
+  printf 'project=myproj\nhome=/abs\nsession=sess1\nworkspace_id=w1\nlabel=proj-somethingelse\n' > "$record"
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj' "$ROOT" "$record" \
+    && fail "a label that does not match this project key's derived label must be rejected"
+
+  printf 'project=myproj\nhome=/abs\nsession=sess1\nworkspace_id=w1\nlabel=proj-myproj\n' > "$record"
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" someoneelse' "$ROOT" "$record" \
+    && fail "a record for a different project key must be rejected"
+
+  printf 'project=myproj\nhome=/abs\nsession=sess1\nworkspace_id=w1\nlabel=proj-myproj\nextra=1\n' > "$record"
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj' "$ROOT" "$record" \
+    && fail "a record with an unexpected extra field must be rejected"
+
+  printf 'project=myproj\nhome=/abs\nsession=sess1\nworkspace_id=w1\nlabel=proj-myproj\n' > "$dir/target"
+  ln -s "$dir/target" "$state/proj-symlinked.herdr-workspace"
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj' "$ROOT" "$state/proj-symlinked.herdr-workspace" \
+    && fail "a symlinked project workspace record must be refused, mirroring the presentation journal's own symlink defense"
+
+  pass "fm_backend_herdr_project_workspace_record_snapshot: refuses a non-absolute home, whitespace fields, a label mismatch, a wrong project key, an unexpected field count, and a symlinked record"
+}
+
+test_project_container_ensure_reuses_and_self_heals_after_removal() {
+  local dir log state fb raw1 raw2 raw3 container1 container2 container3 wsid1 wsid2 wsid3 seeded1 seeded2 seeded3
+  dir="$TMP_ROOT/project-container-cycles"; mkdir -p "$dir"; log="$dir/log"; state="$dir/state.json"; : > "$log"
+  fb=$(make_herdr_statefake "$dir")
+
+  raw1=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_FAKE_HERDR_STATE="$state" HERDR_SESSION=fmtest \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_container_ensure /proj "$1" alpha' "$ROOT" "$dir/fmstate" ) \
+    || fail "first project_container_ensure call failed"
+  container1=${raw1%%$'\t'*}; seeded1=${raw1#*$'\t'}
+  wsid1=${container1#*:}
+  [ -n "$seeded1" ] || fail "the first call should create a fresh project workspace and report its seeded default tab id"
+  [ -f "$dir/fmstate/proj-alpha.herdr-workspace" ] || fail "the first call should persist a project workspace record"
+  jq -r --arg w "$wsid1" '.workspaces[]|select(.workspace_id==$w)|.label' "$state" | grep -qx proj-alpha \
+    || fail "the created workspace should be labeled 'proj-alpha'"
+
+  raw2=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_FAKE_HERDR_STATE="$state" HERDR_SESSION=fmtest \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_container_ensure /proj "$1" alpha' "$ROOT" "$dir/fmstate" ) \
+    || fail "second project_container_ensure call failed"
+  container2=${raw2%%$'\t'*}; seeded2=${raw2#*$'\t'}
+  wsid2=${container2#*:}
+  [ "$wsid2" = "$wsid1" ] || fail "a second call for the same project must adopt the SAME workspace, got '$wsid2' vs '$wsid1'"
+  [ -z "$seeded2" ] || fail "an ADOPTED project workspace must never report a seeded default tab id, got '$seeded2'"
+
+  # Simulate the workspace draining to zero tasks and being removed by herdr -
+  # exactly the scenario the persisted record cannot proactively detect.
+  jq --arg w "$wsid1" '.workspaces |= [.[]|select(.workspace_id != $w)]
+    | .tabs |= [.[]|select(.workspace_id != $w)]' "$state" > "$state.tmp" && mv "$state.tmp" "$state"
+
+  raw3=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_FAKE_HERDR_STATE="$state" HERDR_SESSION=fmtest \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_container_ensure /proj "$1" alpha' "$ROOT" "$dir/fmstate" ) \
+    || fail "third project_container_ensure call (after removal) failed"
+  container3=${raw3%%$'\t'*}; seeded3=${raw3#*$'\t'}
+  wsid3=${container3#*:}
+  [ "$wsid3" != "$wsid1" ] || fail "a stale record naming a now-removed workspace must self-heal into a FRESH workspace, not reuse the dead id"
+  [ -n "$seeded3" ] || fail "the self-healed workspace is a fresh create and should report a seeded default tab id"
+  assert_contains "$(cat "$dir/fmstate/proj-alpha.herdr-workspace")" "workspace_id=$wsid3" \
+    "the project record must be rewritten to the self-healed workspace id"
+
+  pass "fm_backend_herdr_project_container_ensure: reuses one project's shared workspace across spawns and self-heals with a fresh one once the record's workspace is confirmed gone"
+}
+
 test_projection_journal_is_atomic_and_uses_128_bit_token() {
   local dir state out token parsed status
   dir="$TMP_ROOT/projection-journal"; state="$dir/state"; mkdir -p "$state"
@@ -4531,6 +4718,16 @@ test_presentation_running_server_release_is_load_bearing
 test_release_floor_verdict_matches_the_measured_releases
 test_release_floor_verdict_survives_losing_either_signal
 test_presentation_preference_reports_three_distinct_states
+test_presentation_preference_reports_project_grouping
+test_presentation_unrecognized_value_warning_mentions_project
+test_presentation_enabled_project_never_projects_and_never_calls_herdr
+test_presentation_floor_warn_project_feature_has_no_override_hint
+test_presentation_floor_warn_default_feature_wording_unchanged
+test_project_key_sanitize_accepts_and_rejects
+test_project_workspace_label_format
+test_project_workspace_record_round_trip
+test_project_workspace_record_snapshot_rejects_corruption
+test_project_container_ensure_reuses_and_self_heals_after_removal
 test_projection_journal_is_atomic_and_uses_128_bit_token
 test_projection_journal_v2_binds_and_advances_exact_endpoint
 test_projection_create_uses_exact_response_ids_and_leaves_one_task_pane
