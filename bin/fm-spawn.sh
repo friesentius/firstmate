@@ -2292,8 +2292,8 @@ case "$BACKEND" in
     elif [ "$KIND" != secondmate ] \
       && [ "${FM_BACKEND_HERDR_PRESENTATION_PREFERENCE:-default}" = project ]; then
       # Project-grouped placement needs no launcher pane identity and no
-      # presentation journal at all (docs/herdr-backend.md "Project workspace
-      # grouping"): it resolves purely from this project's own persisted
+      # presentation journal at all (docs/herdr-backend.md "Presentation
+      # spaces"): it resolves purely from this project's own persisted
       # workspace record against the named session, verified live under the
       # same session-wide lock the presentation path above already uses for
       # its own read-or-create critical section. The lock is released as soon

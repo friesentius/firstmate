@@ -144,7 +144,7 @@ FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX=".herdr-presentation"
 
 # The config item a home writes to opt out of, or explicitly in to, the
 # projection, or to switch to project-grouped containers instead
-# (docs/herdr-backend.md "Project workspace grouping").
+# (docs/herdr-backend.md "Presentation spaces").
 FM_BACKEND_HERDR_PRESENTATION_CONFIG="herdr-presentation-spaces"
 
 # A per-home persisted binding for one project's shared task container, e.g.
@@ -160,8 +160,8 @@ FM_BACKEND_HERDR_PROJECT_RECORD_SUFFIX=".herdr-workspace"
 # config/herdr-presentation-spaces parsing. Echoes exactly one of "off", "on"
 # (a deliberate opt-in, honored even below the version floor), "project"
 # (group tasks by project instead of per-task disposable spaces - see
-# fm_backend_herdr_presentation_enabled and docs/herdr-backend.md "Project
-# workspace grouping"), or "default" (this home configured nothing, so the
+# fm_backend_herdr_presentation_enabled and docs/herdr-backend.md
+# "Presentation spaces"), or "default" (this home configured nothing, so the
 # floor decides).
 # Values are read with the whole-file whitespace-stripped convention the other
 # scalar config items already use (config/backlog-backend, config/crew-harness),
@@ -299,7 +299,7 @@ fm_backend_herdr_presentation_release_supported() {  # [<session>]
 # fm_backend_herdr_presentation_enabled) or "project" (project workspace
 # grouping, which has no such override - config/herdr-presentation-spaces
 # "project" is always subject to this floor, per docs/herdr-backend.md
-# "Project workspace grouping").
+# "Presentation spaces").
 fm_backend_herdr_presentation_floor_warn() {  # <state-dir> <verdict> [<feature>]
   local state_dir=${1:-} verdict=${2:-2} feature=${3:-presentation}
   local release=${FM_BACKEND_HERDR_PRESENTATION_RELEASE:-an unreadable release} key marker reason topic remedy tmp=""
@@ -356,8 +356,8 @@ fm_backend_herdr_presentation_default_supported() {  # <state-dir> [<session>] [
 # and otherwise falls back to the flat layout with one warning. "project"
 # never enables per-task projection either (bin/fm-spawn.sh's herdr case arm
 # reads FM_BACKEND_HERDR_PRESENTATION_PREFERENCE itself to route those spawns
-# to project-grouped placement instead - docs/herdr-backend.md "Project
-# workspace grouping"). Sets FM_BACKEND_HERDR_PRESENTATION_PREFERENCE for the
+# to project-grouped placement instead - docs/herdr-backend.md "Presentation
+# spaces"). Sets FM_BACKEND_HERDR_PRESENTATION_PREFERENCE for the
 # new-projection boundary to distinguish an unconfigured default from an
 # explicit opt-in or the project-grouping choice.
 fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]
@@ -1978,7 +1978,7 @@ fm_backend_herdr_project_workspace_record_snapshot() {  # <record> <project-key>
 # fm_backend_herdr_project_workspace_ensure: the workspace a project-grouped
 # task's tab belongs in inside <session> - this project's own persisted shared
 # workspace, verified live and (re)created when its record is absent or stale
-# (docs/herdr-backend.md "Project workspace grouping"). The caller must hold
+# (docs/herdr-backend.md "Presentation spaces"). The caller must hold
 # the session's presentation order lock
 # (spawn_herdr_presentation_order_lock_acquire in bin/fm-spawn.sh) for the
 # whole read-verify-or-create-and-write critical section below - this function
