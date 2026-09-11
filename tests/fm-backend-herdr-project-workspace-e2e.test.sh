@@ -33,6 +33,13 @@
 #     label a project's own container would use is never adopted - unlike the
 #     per-home label lookup, project-grouped placement trusts only its own
 #     persisted, live-verified record, never a bare label search
+#   - project grouping has no on-style override (docs/herdr-backend.md
+#     "Project workspace grouping"), so below the same Herdr 0.8.0 floor as
+#     presentation spaces, every "project" spawn instead falls back flat into
+#     the ordinary per-home workspace and persists no project record - this
+#     lab measures its own real herdr session's release and asserts whichever
+#     branch that release actually classifies to, exactly like
+#     tests/fm-backend-herdr-presentation-e2e.test.sh's below-floor case
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -122,6 +129,78 @@ DECOY_OUT=$(herdr workspace create --cwd "$TMP_ROOT" --label "$PROJ2_LABEL" --no
   || fail "could not create the decoy label-colliding workspace"$'\n'"$DECOY_OUT"
 DECOY_WSID=$(printf '%s' "$DECOY_OUT" | jq -r '.result.workspace.workspace_id // empty')
 [ -n "$DECOY_WSID" ] || fail "decoy workspace create returned no workspace_id"
+
+# --- floor check: project grouping has no on-style override, so a below-
+# floor release must fall back flat instead of ever grouping for real. Measure
+# THIS lab session's own real herdr release (mirrors
+# tests/fm-backend-herdr-presentation-e2e.test.sh's below-floor case) rather
+# than assuming either branch. ---------------------------------------------
+
+FLOOR_STATUS=$(fm_backend_herdr_cli "$SESSION" status --json 2>/dev/null) \
+  || fail "could not read the lab session's herdr release for the project-workspace floor"
+FLOOR_VERSION=$(printf '%s' "$FLOOR_STATUS" | jq -r 'if .server.running then .server.version else .client.version end')
+FLOOR_PROTOCOL=$(printf '%s' "$FLOOR_STATUS" | jq -r 'if .server.running then .server.protocol else .client.protocol end')
+FLOOR_VERDICT=$(bash -c '
+  . "$0/bin/backends/herdr.sh"
+  status=0
+  fm_backend_herdr_release_floor_verdict "$1" "$2" || status=$?
+  printf "%s\n" "$status"
+' "$ROOT" "$FLOOR_PROTOCOL" "$FLOOR_VERSION")
+[ "$FLOOR_VERDICT" = 0 ] || [ "$FLOOR_VERDICT" = 1 ] \
+  || fail "herdr $FLOOR_VERSION protocol $FLOOR_PROTOCOL could not be classified against the project-workspace floor"
+
+if [ "$FLOOR_VERDICT" != 0 ]; then
+  # Below the floor: every "project" spawn falls back flat into the ordinary
+  # per-home workspace (unlike default-on presentation, "project" has no
+  # explicit-"on"-style escape hatch to force real grouping regardless of
+  # release - docs/herdr-backend.md "Project workspace grouping").
+  CM1_OUT="$TMP_ROOT/cm1.out"; CM1_ERR="$TMP_ROOT/cm1.err"
+  FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-spawn.sh" cm1 "$PROJ1" "sh -c 'echo cm1-ok'" --mode no-mistakes --yolo off --backend herdr \
+    >"$CM1_OUT" 2>"$CM1_ERR"
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "cm1 spawn failed"$'\n'"--- stdout ---"$'\n'"$(cat "$CM1_OUT")"$'\n'"--- stderr ---"$'\n'"$(cat "$CM1_ERR")"
+  CM1_META="$PRIMARY_HOME/state/cm1.meta"
+  [ -f "$CM1_META" ] || fail "no meta written for cm1"
+  WT1=$(grep '^worktree=' "$CM1_META" | cut -d= -f2-)
+  CM1_PANE=$(grep '^herdr_pane_id=' "$CM1_META" | cut -d= -f2-)
+  [ -n "$CM1_PANE" ] || fail "cm1 meta missing herdr_pane_id"
+  CM1_WSID=$(herdr pane get "$CM1_PANE" --session "$SESSION" 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
+  [ -n "$CM1_WSID" ] || fail "could not read cm1's pane workspace_id"
+  CM1_WS_LABEL=$(herdr workspace list --session "$SESSION" 2>&1 | jq -r --arg id "$CM1_WSID" '.result.workspaces[]? | select(.workspace_id == $id) | .label')
+  [ "$CM1_WS_LABEL" = firstmate ] \
+    || fail "below-floor herdr $FLOOR_VERSION should have fallen back flat (label 'firstmate'), got '$CM1_WS_LABEL'"
+  [ ! -f "$PROJ1_RECORD" ] \
+    || fail "a below-floor spawn must never persist a project-workspace record"
+  grep -q "$FLOOR_VERSION" "$CM1_ERR" \
+    || fail "the below-floor fallback did not name herdr $FLOOR_VERSION: $(cat "$CM1_ERR")"
+  pass "real herdr E2E: project grouping falls back flat on below-floor herdr $FLOOR_VERSION with one naming warning"
+
+  CM3_OUT="$TMP_ROOT/cm3.out"; CM3_ERR="$TMP_ROOT/cm3.err"
+  FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" \
+    "$ROOT/bin/fm-spawn.sh" cm3 "$PROJ2" "sh -c 'echo cm3-ok'" --mode no-mistakes --yolo off --backend herdr \
+    >"$CM3_OUT" 2>"$CM3_ERR"
+  rc=$?
+  [ "$rc" -eq 0 ] || fail "cm3 spawn failed"$'\n'"--- stdout ---"$'\n'"$(cat "$CM3_OUT")"$'\n'"--- stderr ---"$'\n'"$(cat "$CM3_ERR")"
+  CM3_META="$PRIMARY_HOME/state/cm3.meta"
+  [ -f "$CM3_META" ] || fail "no meta written for cm3"
+  WT3=$(grep '^worktree=' "$CM3_META" | cut -d= -f2-)
+  CM3_PANE=$(grep '^herdr_pane_id=' "$CM3_META" | cut -d= -f2-)
+  [ -n "$CM3_PANE" ] || fail "cm3 meta missing herdr_pane_id"
+  CM3_WSID=$(herdr pane get "$CM3_PANE" --session "$SESSION" 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
+  [ "$CM3_WSID" = "$CM1_WSID" ] \
+    || fail "below-floor herdr $FLOOR_VERSION should share the SAME flat per-home workspace across projects, got '$CM3_WSID' vs '$CM1_WSID'"
+  [ ! -f "$PROJ2_RECORD" ] \
+    || fail "a below-floor spawn must never persist a project-workspace record"
+  pass "real herdr E2E: a different project shares the same below-floor flat fallback workspace instead of its own project-grouped one"
+
+  fm_backend_herdr_kill "$SESSION:$CM1_PANE"
+  fm_backend_herdr_kill "$SESSION:$CM3_PANE"
+  herdr workspace delete "$DECOY_WSID" --session "$SESSION" >/dev/null 2>&1 || true
+  cleanup_all
+  trap - EXIT
+  exit 0
+fi
 
 # --- 1. two tasks for the SAME project (PROJ1) share one workspace ---------
 
