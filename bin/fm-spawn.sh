@@ -2172,6 +2172,7 @@ case "$BACKEND" in
     fi
     HERDR_PRESENTATION_JOURNAL=$(fm_backend_herdr_projection_journal_path "$STATE" "$ID")
     HERDR_PROJECTED=0
+    HERDR_PROJECT_GROUPED=0
     if [ "$KIND" != secondmate ] && fm_backend_herdr_presentation_enabled "$CONFIG" "$STATE"; then
       HERDR_SES=$(fm_backend_herdr_session)
       HERDR_PARENT_LABEL=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_workspace_label)
@@ -2288,8 +2289,49 @@ case "$BACKEND" in
           echo "warning: herdr presentation focus lock unavailable; using the ordinary flat layout without projection" >&2
         fi
       fi
+    elif [ "$KIND" != secondmate ] \
+      && [ "${FM_BACKEND_HERDR_PRESENTATION_PREFERENCE:-default}" = project ]; then
+      # Project-grouped placement needs no launcher pane identity and no
+      # presentation journal at all (docs/herdr-backend.md "Presentation
+      # spaces"): it resolves purely from this project's own persisted
+      # workspace record against the named session, verified live under the
+      # same session-wide lock the presentation path above already uses for
+      # its own read-or-create critical section. The lock is released as soon
+      # as that resolution is done; fm_backend_herdr_create_task below needs no
+      # lock of its own, exactly like the flat per-home path's own call to it.
+      HERDR_SES=$(fm_backend_herdr_session)
+      HERDR_PROJECT_KEY=$(fm_backend_herdr_project_key_for_path "$PROJ_ABS") || HERDR_PROJECT_KEY=
+      HERDR_PROJECT_BASENAME=$(fm_backend_herdr_project_key_basename "$PROJ_ABS") || HERDR_PROJECT_BASENAME=
+      if ! fm_backend_herdr_presentation_default_supported "$STATE" "$HERDR_SES" project; then
+        :
+      elif [ -z "$HERDR_PROJECT_KEY" ]; then
+        echo "warning: herdr project workspace key unsafe for '$(basename "$PROJ_ABS")' (unsupported characters); using the ordinary flat layout without project grouping" >&2
+      elif spawn_herdr_presentation_order_lock_acquire "$HERDR_SES"; then
+        set +e
+        HERDR_PROJECT_CONTAINER_RAW=$(fm_backend_herdr_project_container_ensure "$PROJ_ABS" "$STATE" "$HERDR_PROJECT_KEY" "$HERDR_PROJECT_BASENAME")
+        HERDR_PROJECT_STATUS=$?
+        set -e
+        spawn_herdr_presentation_order_lock_release
+        [ "$HERDR_PROJECT_STATUS" -eq 0 ] || exit 1
+        # fm_backend_herdr_project_container_ensure echoes the same
+        # "<session>:<workspace_id>\t<seeded_default_tab_id>" shape as
+        # fm_backend_herdr_container_ensure, so the split and the
+        # fm_backend_herdr_create_task call below are byte-identical to the
+        # flat per-home path.
+        CONTAINER=${HERDR_PROJECT_CONTAINER_RAW%%$'\t'*}
+        HERDR_SEEDED_DEFAULT_TAB_ID=${HERDR_PROJECT_CONTAINER_RAW#*$'\t'}
+        HERDR_SES=${CONTAINER%%:*}
+        HERDR_WORKSPACE_ID=${CONTAINER#*:}
+        HERDR_TASK_IDS=$(fm_backend_herdr_create_task "$CONTAINER" "$W" "$PROJ_ABS" "$HERDR_SEEDED_DEFAULT_TAB_ID") || exit 1
+        read -r HERDR_TAB_ID HERDR_PANE_ID <<EOF
+$HERDR_TASK_IDS
+EOF
+        HERDR_PROJECT_GROUPED=1
+      else
+        echo "warning: herdr project workspace focus lock unavailable; using the ordinary flat layout without project grouping" >&2
+      fi
     fi
-    if [ "$HERDR_PROJECTED" -ne 1 ]; then
+    if [ "$HERDR_PROJECTED" -ne 1 ] && [ "$HERDR_PROJECT_GROUPED" -ne 1 ]; then
       HERDR_CONTAINER_RAW=$(FM_HOME="$HERDR_LABEL_HOME" fm_backend_herdr_container_ensure "$PROJ_ABS" "$HERDR_LAUNCHER_RELATIONSHIP") || exit 1
       # fm_backend_herdr_container_ensure echoes "<session>:<workspace_id>\t<seeded_default_tab_id>"
       # (the second field empty when this call ADOPTED a pre-existing workspace

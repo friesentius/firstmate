@@ -67,6 +67,9 @@ Existing task operations use recorded endpoint ids and do not move a live task w
 The per-home workspace is reused while it has task tabs.
 Closing its last tab can remove the workspace, and the next spawn recreates it.
 
+A home can choose a third topology instead of either default: grouping every task by project rather than by home or by task.
+[Presentation spaces](#presentation-spaces) owns the full contract for that choice, the disposable one-task default, and the shared config item that selects between them.
+
 ## Presentation spaces
 
 Each new crewmate or scout is placed in a disposable one-task workspace by default, on Herdr 0.8.0 and newer.
@@ -88,6 +91,16 @@ Upgrading Herdr to 0.8.0 or newer is the fix; writing `off` is the immediate mit
 The setting is inherited into secondmate homes through the normal configuration-convergence owner, and the default needs no special convergence: the primary's absent file and the secondmate's absent file both mean the same unconfigured default, so leaving it converges a secondmate to that same default rather than turning it off, and only an explicit primary `off` propagates the opt-out.
 A secondmate agent itself always stays in its ordinary parent workspace; only children launched by that home are eligible.
 An unconverged opt-out keeps the default projection in that home until convergence.
+
+`config/herdr-presentation-spaces` also accepts `project`, a third value mutually exclusive with `off` and `on`: instead of a disposable one-task workspace, every task for one project shares that project's own durable workspace, identified by a collision-resistant project key - the project's registry name (the same name `bin/fm-project-mode.sh` and `bin/fm-spawn.sh`'s own standing-mode lookup already use) followed by a short hash of the project's full absolute path (`fm_backend_herdr_project_key_for_path`) - and scoped to this home exactly like the per-home workspace above, so a project worked by both the primary and a secondmate gets two independent workspaces, and two differently-located projects that happen to share a registry name (e.g. `~/oss/frontend` and `~/work/frontend`) never collide into the same workspace.
+Firstmate persists that binding in `state/proj-<project-key>.herdr-workspace` and verifies it live - matching home, matching session, and the workspace's own continued presence in the session - before any spawn trusts it.
+A missing or stale record is not an error: it means create a fresh workspace and rewrite the record, exactly like the per-home workspace's own recreation after its last tab closes.
+That persisted, live-verified record is the only path to placement; unlike the per-home lookup above, project grouping never searches by label, so a pre-existing workspace that happens to carry the same visible label - a captain's own scratch space, or another home's leftover - is never adopted.
+The path hash exists only to keep the persisted record and internal identity lookup collision-free; it never reaches anything visible.
+The actual herdr workspace `--label`, and the record's own `label=` field, use only the project's plain registry name (`fm_backend_herdr_project_key_basename`), so the workspace still reads as a clean `proj-<name>` even though two differently-located same-named projects resolve to two differently-keyed records behind it.
+A project directory basename with characters unsafe for a workspace label or record filename (anything outside `[A-Za-z0-9._-]`, or a leading dot) is not an error either: it warns, naming the unsafe basename, and falls back to the ordinary flat per-home layout instead of grouping - it never aborts the spawn.
+Project grouping is subject to the same Herdr 0.8.0 floor as the default-on projection above, warning once per home per detected release and falling back to the ordinary flat per-home layout below it, but with no `on`-style override: an explicit `project` choice is still gated, because one project's workspace can drain to zero tasks and get removed far more often than a whole home going idle, unlike the flat layout's unconditional exposure to the same pre-0.8.0 focus defect.
+Tab creation, teardown, and relaunch need no project-specific handling: a project-grouped task carries no presentation journal, so it takes the same ordinary create-task and focus-safe-close paths the flat per-home layout already uses.
 
 Presentation is a best-effort visual projection, never task ownership or lifecycle authority.
 Only a fresh task with neither metadata nor an existing presentation journal is eligible for projected creation.
@@ -337,6 +350,7 @@ tests/fm-backend-herdr-smoke.test.sh
 tests/fm-backend-herdr-prune-safety-e2e.test.sh
 tests/fm-backend-herdr-respawn-idem-e2e.test.sh
 tests/fm-backend-herdr-workspace-per-home-e2e.test.sh
+tests/fm-backend-herdr-project-workspace-e2e.test.sh
 tests/fm-backend-herdr-launcher-workspace-e2e.test.sh
 tests/fm-backend-herdr-presentation-e2e.test.sh
 tests/fm-backend-herdr-eventwait-smoke.test.sh

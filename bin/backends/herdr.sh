@@ -143,13 +143,26 @@ FM_BACKEND_HERDR_SECONDMATE_MARKER=".fm-secondmate-home"
 FM_BACKEND_HERDR_PRESENTATION_JOURNAL_SUFFIX=".herdr-presentation"
 
 # The config item a home writes to opt out of, or explicitly in to, the
-# projection.
+# projection, or to switch to project-grouped containers instead
+# (docs/herdr-backend.md "Presentation spaces").
 FM_BACKEND_HERDR_PRESENTATION_CONFIG="herdr-presentation-spaces"
+
+# A per-home persisted binding for one project's shared task container, e.g.
+# state/proj-<project-key>.herdr-workspace. Unlike the per-task presentation
+# journal above, this record is durable across every task that project ever
+# spawns: it is read, verified live, and adopted on every spawn rather than
+# created once and torn down. fm_backend_herdr_project_workspace_ensure is the
+# single owner of its create-or-adopt logic.
+FM_BACKEND_HERDR_PROJECT_RECORD_PREFIX="proj-"
+FM_BACKEND_HERDR_PROJECT_RECORD_SUFFIX=".herdr-workspace"
 
 # fm_backend_herdr_presentation_preference <config-dir>: the single owner of
 # config/herdr-presentation-spaces parsing. Echoes exactly one of "off", "on"
-# (a deliberate opt-in, honored even below the version floor), or "default"
-# (this home configured nothing, so the floor decides).
+# (a deliberate opt-in, honored even below the version floor), "project"
+# (group tasks by project instead of per-task disposable spaces - see
+# fm_backend_herdr_presentation_enabled and docs/herdr-backend.md
+# "Presentation spaces"), or "default" (this home configured nothing, so the
+# floor decides).
 # Values are read with the whole-file whitespace-stripped convention the other
 # scalar config items already use (config/backlog-backend, config/crew-harness),
 # plus case folding. An empty file is the historical presence-based opt-in form
@@ -166,8 +179,9 @@ fm_backend_herdr_presentation_preference() {  # <config-dir>
   case "$value" in
     off) printf 'off\n' ;;
     ''|on) printf 'on\n' ;;
+    project) printf 'project\n' ;;
     *)
-      echo "warning: $file: unrecognized value \"$value\"; herdr presentation spaces fall back to the default (write \"off\" to opt out, \"on\" to force the projection on)" >&2
+      echo "warning: $file: unrecognized value \"$value\"; herdr presentation spaces fall back to the default (write \"off\" to opt out, \"on\" to force the projection on, \"project\" to group tasks by project instead)" >&2
       printf 'default\n'
       ;;
   esac
@@ -276,16 +290,33 @@ fm_backend_herdr_presentation_release_supported() {  # [<session>]
   esac
 }
 
-# fm_backend_herdr_presentation_floor_warn <state-dir> <verdict>: emit the one
-# clear below-floor warning, deduplicated per home per detected release when a
-# usable state dir is given. Without one the warning is emitted every call,
-# which is what a one-shot caller wants.
-fm_backend_herdr_presentation_floor_warn() {  # <state-dir> <verdict>
-  local state_dir=${1:-} verdict=${2:-2} release=${FM_BACKEND_HERDR_PRESENTATION_RELEASE:-an unreadable release} key marker reason tmp=""
+# fm_backend_herdr_presentation_floor_warn <state-dir> <verdict> [<feature>]:
+# emit the one clear below-floor warning, deduplicated per home per detected
+# release when a usable state dir is given. Without one the warning is emitted
+# every call, which is what a one-shot caller wants.
+# <feature> selects the reason/remedy wording: "presentation" (the default -
+# an explicit "on" bypasses this warning entirely, per
+# fm_backend_herdr_presentation_enabled) or "project" (project workspace
+# grouping, which has no such override - config/herdr-presentation-spaces
+# "project" is always subject to this floor, per docs/herdr-backend.md
+# "Presentation spaces").
+fm_backend_herdr_presentation_floor_warn() {  # <state-dir> <verdict> [<feature>]
+  local state_dir=${1:-} verdict=${2:-2} feature=${3:-presentation}
+  local release=${FM_BACKEND_HERDR_PRESENTATION_RELEASE:-an unreadable release} key marker reason topic remedy tmp=""
+  case "$feature" in
+    project)
+      topic="project workspace grouping, where a drained project's cleanup can steal the active workspace"
+      remedy="Upgrade herdr to $FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION or newer (herdr update) to use project workspace grouping on this release."
+      ;;
+    *)
+      topic="presentation spaces, where projected cleanup can steal the active workspace"
+      remedy="Upgrade herdr to $FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION or newer (herdr update) to restore the projection, or write \"on\" into config/$FM_BACKEND_HERDR_PRESENTATION_CONFIG to force it on this release."
+      ;;
+  esac
   if [ "$verdict" -eq 1 ]; then
-    reason="herdr $release is older than the $FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION floor for presentation spaces, where projected cleanup can steal the active workspace"
+    reason="herdr $release is older than the $FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION floor for $topic"
   else
-    reason="the selected herdr release could not be read, so the $FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION floor for presentation spaces cannot be verified"
+    reason="the selected herdr release could not be read, so the $FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION floor for $topic cannot be verified"
   fi
   if [ -n "$state_dir" ] && [ -d "$state_dir" ] && [ ! -L "$state_dir" ]; then
     key=${release//[^a-zA-Z0-9]/-}
@@ -301,18 +332,19 @@ fm_backend_herdr_presentation_floor_warn() {  # <state-dir> <verdict>
       fi
     fi
   fi
-  echo "warning: $reason; using the ordinary flat layout instead. Upgrade herdr to $FM_BACKEND_HERDR_MIN_PRESENTATION_VERSION or newer (herdr update) to restore the projection, or write \"on\" into config/$FM_BACKEND_HERDR_PRESENTATION_CONFIG to force it on this release." >&2
+  echo "warning: $reason; using the ordinary flat layout instead. $remedy" >&2
   return 0
 }
 
-# fm_backend_herdr_presentation_default_supported <state-dir> [<session>]:
+# fm_backend_herdr_presentation_default_supported <state-dir> [<session>] [<feature>]:
 # compose the applicable release verdict and the shared warning contract for
-# one unconfigured home.
-fm_backend_herdr_presentation_default_supported() {  # <state-dir> [<session>]
-  local state_dir=${1:-} session=${2:-} verdict=0
+# one unconfigured home. <feature> is passed straight through to
+# fm_backend_herdr_presentation_floor_warn, which owns its meaning.
+fm_backend_herdr_presentation_default_supported() {  # <state-dir> [<session>] [<feature>]
+  local state_dir=${1:-} session=${2:-} feature=${3:-presentation} verdict=0
   fm_backend_herdr_presentation_release_supported "$session" || verdict=$?
   [ "$verdict" -eq 0 ] && return 0
-  fm_backend_herdr_presentation_floor_warn "$state_dir" "$verdict"
+  fm_backend_herdr_presentation_floor_warn "$state_dir" "$verdict" "$feature"
   return 1
 }
 
@@ -321,9 +353,13 @@ fm_backend_herdr_presentation_default_supported() {  # <state-dir> [<session>]
 # disposable one-task workspaces (docs/herdr-backend.md "Presentation spaces"
 # owns the full contract). An explicit "off" or "on" is obeyed as written; a
 # home that configured nothing is projected only at or above the version floor,
-# and otherwise falls back to the flat layout with one warning. Sets
-# FM_BACKEND_HERDR_PRESENTATION_PREFERENCE for the new-projection boundary to
-# distinguish an unconfigured default from an explicit opt-in.
+# and otherwise falls back to the flat layout with one warning. "project"
+# never enables per-task projection either (bin/fm-spawn.sh's herdr case arm
+# reads FM_BACKEND_HERDR_PRESENTATION_PREFERENCE itself to route those spawns
+# to project-grouped placement instead - docs/herdr-backend.md "Presentation
+# spaces"). Sets FM_BACKEND_HERDR_PRESENTATION_PREFERENCE for the
+# new-projection boundary to distinguish an unconfigured default from an
+# explicit opt-in or the project-grouping choice.
 fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]
   local config_dir=${1:-} state_dir=${2:-} preference
   preference=$(fm_backend_herdr_presentation_preference "$config_dir")
@@ -333,6 +369,7 @@ fm_backend_herdr_presentation_enabled() {  # <config-dir> [<state-dir>]
   case "$preference" in
     off) return 1 ;;
     on) return 0 ;;
+    project) return 1 ;;
   esac
   fm_backend_herdr_presentation_default_supported "$state_dir"
 }
@@ -1823,6 +1860,223 @@ fm_backend_herdr_container_ensure() {  # <cwd-for-a-fresh-workspace> [<launcher-
     return 1
   fi
   printf '%s:%s\t%s' "$session" "$FM_BACKEND_HERDR_WS_ID" "$FM_BACKEND_HERDR_WS_SEEDED_TAB_ID"
+}
+
+# fm_backend_herdr_project_key_sanitize: validate <project-key> for safe use in
+# a herdr project-workspace record filename and --label value. Mirrors the
+# task-id sanitization already enforced before a presentation journal path is
+# built (fm_backend_herdr_projection_journal_create).
+fm_backend_herdr_project_key_sanitize() {  # <project-key>
+  local key=$1
+  case "$key" in
+    ''|.*|*[!A-Za-z0-9._-]*) return 1 ;;
+  esac
+  printf '%s' "$key"
+}
+
+# fm_backend_herdr_project_key_hash: an 8-hex-char stable hash of an absolute
+# path. Same shasum/sha256sum/cksum fallback chain fm_backend_hometag already
+# uses (bin/fm-backend-hometag-lib.sh) to keep two on-disk paths from
+# colliding under one shared human-readable prefix.
+fm_backend_herdr_project_key_hash() {  # <abs-path>
+  local path=$1 hash
+  if command -v shasum >/dev/null 2>&1; then
+    hash=$(printf '%s' "$path" | shasum -a 256 | awk '{print substr($1,1,8)}')
+  elif command -v sha256sum >/dev/null 2>&1; then
+    hash=$(printf '%s' "$path" | sha256sum | awk '{print substr($1,1,8)}')
+  else
+    hash=$(printf '%s' "$path" | cksum | awk '{printf "%08x", $1}')
+  fi
+  printf '%s' "$hash"
+}
+
+# fm_backend_herdr_project_key_for_path: the collision-resistant project key
+# for one project-grouped workspace - the project directory's basename, kept
+# as a human-readable prefix (the same name bin/fm-project-mode.sh and
+# bin/fm-spawn.sh's own standing-mode lookup use), followed by a short hash
+# of the project's full absolute path. Two different projects that happen to
+# share a basename (e.g. ~/oss/frontend and ~/work/frontend) therefore never
+# resolve to the same persisted record or the same workspace label. Returns 1
+# with no output when the basename itself fails
+# fm_backend_herdr_project_key_sanitize (e.g. it contains a space or starts
+# with a dot); the caller decides whether that means falling back to the
+# ordinary flat per-home layout.
+fm_backend_herdr_project_key_for_path() {  # <abs-project-path>
+  local path=$1 base
+  base=$(basename "$path")
+  base=$(fm_backend_herdr_project_key_sanitize "$base") || return 1
+  printf '%s-%s' "$base" "$(fm_backend_herdr_project_key_hash "$path")"
+}
+
+# fm_backend_herdr_project_key_basename: the sanitized project directory
+# basename alone, with no path-disambiguating hash - the human-readable
+# portion used for the VISIBLE herdr workspace label and the persisted
+# record's own label= field, as distinct from
+# fm_backend_herdr_project_key_for_path's collision-resistant identity key.
+# The hash exists only to keep two differently-located same-named projects
+# from colliding on one record or workspace; it must never appear in
+# anything the captain actually sees.
+fm_backend_herdr_project_key_basename() {  # <abs-project-path>
+  fm_backend_herdr_project_key_sanitize "$(basename "$1")"
+}
+
+# fm_backend_herdr_project_workspace_label: the herdr workspace label for one
+# project's shared task container - distinct from a per-home label
+# (fm_backend_herdr_workspace_label) and from a presentation-only per-task
+# label (fm_backend_herdr_projection_workspace_label).
+fm_backend_herdr_project_workspace_label() {  # <sanitized-project-key>
+  printf 'proj-%s' "$1"
+}
+
+fm_backend_herdr_project_workspace_record_path() {  # <state-dir> <sanitized-project-key>
+  printf '%s/%s%s%s' "$1" "$FM_BACKEND_HERDR_PROJECT_RECORD_PREFIX" "$2" "$FM_BACKEND_HERDR_PROJECT_RECORD_SUFFIX"
+}
+
+# fm_backend_herdr_project_workspace_record_write: atomically publish this
+# home's persisted binding for one project's shared workspace. Plain
+# key=value lines, never sourced as shell code, read back only through
+# fm_backend_herdr_projection_journal_field (shared with the presentation
+# journal - one field reader, two record shapes).
+fm_backend_herdr_project_workspace_record_write() {  # <record> <project-key> <home> <session> <workspace-id> <label>
+  local record=$1 key=$2 home=$3 session=$4 workspace=$5 label=$6 state tmp
+  state=$(dirname "$record")
+  mkdir -p "$state" || return 1
+  tmp=$(mktemp "$state/.${key}.herdr-workspace.XXXXXX") || return 1
+  chmod 0600 "$tmp" || { rm -f "$tmp"; return 1; }
+  if ! {
+    printf 'project=%s\n' "$key"
+    printf 'home=%s\n' "$home"
+    printf 'session=%s\n' "$session"
+    printf 'workspace_id=%s\n' "$workspace"
+    printf 'label=%s\n' "$label"
+  } > "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  mv -f "$tmp" "$record"
+}
+
+# fm_backend_herdr_project_workspace_record_snapshot: validate one persisted
+# per-project workspace record without sourcing shell code - the same
+# discipline fm_backend_herdr_projection_journal_snapshot applies to the
+# per-task journal. Sets FM_BACKEND_HERDR_PROJECT_* globals on success.
+# <display-basename> is the record's project key stripped of its
+# path-disambiguating hash (fm_backend_herdr_project_key_basename) - the
+# stored label= field is checked against THAT, not against <project-key>,
+# since the visible label deliberately excludes the hash.
+fm_backend_herdr_project_workspace_record_snapshot() {  # <record> <project-key> <display-basename>
+  local record=$1 key=$2 basename_key=$3 lines exact expected_label
+  FM_BACKEND_HERDR_PROJECT_HOME=""
+  FM_BACKEND_HERDR_PROJECT_SESSION=""
+  FM_BACKEND_HERDR_PROJECT_WORKSPACE_ID=""
+  FM_BACKEND_HERDR_PROJECT_LABEL=""
+  [ -f "$record" ] && [ ! -L "$record" ] || return 1
+  lines=$(wc -l < "$record" 2>/dev/null | tr -d '[:space:]')
+  [ "$lines" = 5 ] || return 1
+  [ "$(fm_backend_herdr_projection_journal_field "$record" project)" = "$key" ] || return 1
+  FM_BACKEND_HERDR_PROJECT_HOME=$(fm_backend_herdr_projection_journal_field "$record" home) || return 1
+  FM_BACKEND_HERDR_PROJECT_SESSION=$(fm_backend_herdr_projection_journal_field "$record" session) || return 1
+  FM_BACKEND_HERDR_PROJECT_WORKSPACE_ID=$(fm_backend_herdr_projection_journal_field "$record" workspace_id) || return 1
+  FM_BACKEND_HERDR_PROJECT_LABEL=$(fm_backend_herdr_projection_journal_field "$record" label) || return 1
+  case "$FM_BACKEND_HERDR_PROJECT_HOME" in
+    /*) ;;
+    *) return 1 ;;
+  esac
+  for exact in "$FM_BACKEND_HERDR_PROJECT_SESSION" "$FM_BACKEND_HERDR_PROJECT_WORKSPACE_ID"; do
+    case "$exact" in
+      ''|*[[:space:]]*) return 1 ;;
+    esac
+  done
+  expected_label=$(fm_backend_herdr_project_workspace_label "$basename_key")
+  [ "$FM_BACKEND_HERDR_PROJECT_LABEL" = "$expected_label" ]
+}
+
+# fm_backend_herdr_project_workspace_ensure: the workspace a project-grouped
+# task's tab belongs in inside <session> - this project's own persisted shared
+# workspace, verified live and (re)created when its record is absent or stale
+# (docs/herdr-backend.md "Presentation spaces"). The caller must hold
+# the session's presentation order lock
+# (spawn_herdr_presentation_order_lock_acquire in bin/fm-spawn.sh) for the
+# whole read-verify-or-create-and-write critical section below - this function
+# does not acquire it itself, the same division bin/fm-spawn.sh already uses
+# around the per-task presentation journal's own create-or-adopt step.
+# Must be called as a PLAIN STATEMENT, never through command substitution
+# ($(...)) - same reason as fm_backend_herdr_workspace_ensure: it communicates
+# through these globals, and a command substitution forks a subshell that
+# would discard them:
+#   FM_BACKEND_HERDR_PROJECT_WS_ID            - the resolved workspace_id
+#   FM_BACKEND_HERDR_PROJECT_WS_SEEDED_TAB_ID - non-empty ONLY when THIS call
+#                                      just CREATED the workspace; empty when
+#                                      an existing verified record was adopted.
+# <project-key> is the collision-resistant identity
+# (fm_backend_herdr_project_key_for_path) used for the persisted record's
+# path and its project= field; <display-basename>
+# (fm_backend_herdr_project_key_basename) is that same project's basename
+# alone, with no path hash, used for the actual herdr --label and the
+# record's own label= field, so the hash that keeps two same-named projects
+# from colliding never reaches anything the captain sees.
+# Returns 0 on success, 1 for an invalid project key or basename, or a
+# failed or unparseable herdr call.
+fm_backend_herdr_project_workspace_ensure() {  # <session> <cwd> <state-dir> <project-key> <display-basename>
+  local session=$1 cwd=$2 state=$3 raw_key=$4 raw_basename=$5
+  local key basename_key record home_id out wsid label
+  FM_BACKEND_HERDR_PROJECT_WS_ID=""
+  FM_BACKEND_HERDR_PROJECT_WS_SEEDED_TAB_ID=""
+  key=$(fm_backend_herdr_project_key_sanitize "$raw_key") || {
+    echo "error: invalid project key for herdr project workspace" >&2
+    return 1
+  }
+  basename_key=$(fm_backend_herdr_project_key_sanitize "$raw_basename") || {
+    echo "error: invalid project display name for herdr project workspace" >&2
+    return 1
+  }
+  record=$(fm_backend_herdr_project_workspace_record_path "$state" "$key")
+  home_id=$(fm_backend_herdr_projection_home_identity "$FM_HOME" 2>/dev/null || true)
+  if [ -n "$home_id" ] \
+    && fm_backend_herdr_project_workspace_record_snapshot "$record" "$key" "$basename_key" \
+    && [ "$FM_BACKEND_HERDR_PROJECT_HOME" = "$home_id" ] \
+    && [ "$FM_BACKEND_HERDR_PROJECT_SESSION" = "$session" ] \
+    && [ "$(fm_backend_herdr_workspace_presence_state "$session" "$FM_BACKEND_HERDR_PROJECT_WORKSPACE_ID")" = present ]; then
+    FM_BACKEND_HERDR_PROJECT_WS_ID=$FM_BACKEND_HERDR_PROJECT_WORKSPACE_ID
+    printf '%s' "$FM_BACKEND_HERDR_PROJECT_WS_ID"
+    return 0
+  fi
+  label=$(fm_backend_herdr_project_workspace_label "$basename_key")
+  out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$cwd" --label "$label" --no-focus 2>/dev/null) || return 1
+  wsid=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
+  [ -n "$wsid" ] || return 1
+  FM_BACKEND_HERDR_PROJECT_WS_ID=$wsid
+  # Not pruned here, for the same reason fm_backend_herdr_workspace_ensure
+  # does not prune its own seeded tab here either: at this instant it is the
+  # workspace's ONLY tab, and closing a workspace's last tab deletes the
+  # workspace itself. fm_backend_herdr_create_task prunes it once the first
+  # real task tab exists alongside it.
+  FM_BACKEND_HERDR_PROJECT_WS_SEEDED_TAB_ID=$(printf '%s' "$out" | jq -r '.result.tab.tab_id // empty' 2>/dev/null)
+  if [ -z "$home_id" ] \
+    || ! fm_backend_herdr_project_workspace_record_write "$record" "$key" "$home_id" "$session" "$wsid" "$label"; then
+    echo "warning: herdr project workspace created but its restart record could not be published; this project's next spawn will create a fresh workspace" >&2
+  fi
+  printf '%s' "$wsid"
+}
+
+# fm_backend_herdr_project_container_ensure: the full project-workspace
+# container-ensure sequence (version gate, server, project workspace). Echoes
+# "<session>:<workspace_id>\t<seeded_default_tab_id>" - byte-identical shape to
+# fm_backend_herdr_container_ensure, so it plugs into the existing
+# fm_backend_herdr_create_task call unchanged. <project-key> and
+# <display-basename> are passed straight through to
+# fm_backend_herdr_project_workspace_ensure, which owns their meaning.
+fm_backend_herdr_project_container_ensure() {  # <cwd> <state-dir> <project-key> <display-basename>
+  local cwd=${1:-$PWD} state=$2 key=$3 basename_key=$4 session status
+  fm_backend_herdr_version_check || return 1
+  session=$(fm_backend_herdr_session)
+  fm_backend_herdr_server_ensure "$session" || return 1
+  fm_backend_herdr_project_workspace_ensure "$session" "$cwd" "$state" "$key" "$basename_key" >/dev/null && status=0 || status=$?
+  if [ "$status" -ne 0 ] || [ -z "$FM_BACKEND_HERDR_PROJECT_WS_ID" ]; then
+    echo "error: failed to ensure herdr project workspace 'proj-$basename_key' in session '$session'" >&2
+    return 1
+  fi
+  printf '%s:%s\t%s' "$session" "$FM_BACKEND_HERDR_PROJECT_WS_ID" "$FM_BACKEND_HERDR_PROJECT_WS_SEEDED_TAB_ID"
 }
 
 # fm_backend_herdr_pane_presence_state: classify one exact pane get response
