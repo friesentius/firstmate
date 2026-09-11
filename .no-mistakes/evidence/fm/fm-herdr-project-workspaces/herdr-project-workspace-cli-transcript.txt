@@ -1,0 +1,81 @@
+Manual end-to-end CLI transcript demonstrating the herdr project-workspace
+feature (config/herdr-presentation-spaces=project): one herdr workspace per
+project, one tab per task/worker within it, and workspace teardown once the
+project drains to zero tasks.
+
+Driven with the REAL herdr, jq, and treehouse binaries and the REAL
+bin/fm-spawn.sh / bin/fm-teardown.sh, in an isolated throwaway lab session
+(never the captain's default session), mirroring the safety conventions of
+tests/fm-backend-herdr-project-workspace-e2e.test.sh. All lab artifacts
+(session, worktrees, scratch project, scratch home) were cleaned up
+automatically at the end of the run.
+
+This transcript also demonstrates the specific fix under test in commit
+a6ae310 ("keep the collision-resistant path hash out of the visible
+label"): the persisted record's project= field carries the collision-
+disambiguating hash ("frontend-4002f115"), while the actual herdr workspace
+label and the record's own label= field stay a clean "proj-frontend" with
+no hash suffix.
+
+=== Project directory: /tmp/fm-herdr-proj-demo.EInW4D/frontend ===
+
+>>> Spawning task cm1 for project 'frontend' (config/herdr-presentation-spaces=project) <<<
+warning: /tmp/fm-herdr-proj-demo.EInW4D/primary-home/data/cm1/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned cm1 harness=sh kind=ship mode=no-mistakes yolo=off window=fm-lab-herdr-proj-demo-1814532:w1:p2 worktree=/home/friesent/.treehouse/frontend-941995/1/frontend
+
+>>> herdr workspace list after cm1 (real herdr CLI) <<<
+{
+  "workspace_id": "w1",
+  "label": "proj-frontend"
+}
+
+>>> Persisted project-workspace record (state/proj-<hashed-key>.herdr-workspace) <<<
+--- /tmp/fm-herdr-proj-demo.EInW4D/primary-home/state/proj-frontend-4002f115.herdr-workspace ---
+project=frontend-4002f115
+home=/tmp/fm-herdr-proj-demo.EInW4D/primary-home
+session=fm-lab-herdr-proj-demo-1814532
+workspace_id=w1
+label=proj-frontend
+
+>>> Spawning a SECOND task, cm2, for the SAME project 'frontend' <<<
+warning: /tmp/fm-herdr-proj-demo.EInW4D/primary-home/data/cm2/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned cm2 harness=sh kind=ship mode=no-mistakes yolo=off window=fm-lab-herdr-proj-demo-1814532:w1:p3 worktree=/home/friesent/.treehouse/frontend-941995/2/frontend
+
+>>> herdr workspace list after cm2 - still ONE workspace for this project <<<
+{
+  "workspace_id": "w1",
+  "label": "proj-frontend"
+}
+
+>>> herdr tab list for that shared workspace - one tab per task <<<
+{
+  "tab_id": "w1:t2",
+  "title": null
+}
+{
+  "tab_id": "w1:t3",
+  "title": null
+}
+
+CONFIRMED: cm1 and cm2 share workspace w1 (one workspace per project, one tab per task).
+
+>>> Tearing down cm1 (not the project's last task) <<<
+teardown cm1 complete (window fm-lab-herdr-proj-demo-1814532:w1:p2, worktree /home/friesent/.treehouse/frontend-941995/1/frontend)
+>>> herdr workspace list after tearing down cm1 - workspace survives (cm2's tab still open) <<<
+{
+  "workspace_id": "w1",
+  "label": "proj-frontend"
+}
+
+>>> Tearing down cm2, the project's LAST task <<<
+teardown cm2 complete (window fm-lab-herdr-proj-demo-1814532:w1:p3, worktree /home/friesent/.treehouse/frontend-941995/2/frontend)
+>>> herdr workspace list after tearing down cm2 - the project workspace is GONE <<<
+
+CONFIRMED: draining the project's last task closed its shared workspace.
+
+=== Demo complete: no lab artifacts left behind ===
+
+(Trimmed: per-run watcher-supervision and backlog-update advisory banners
+emitted by fm-teardown.sh, unrelated to the herdr project-workspace behavior
+under test, were omitted from the teardown sections above for readability.
+The full raw output was reviewed and contained no other differences.)
