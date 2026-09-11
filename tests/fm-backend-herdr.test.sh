@@ -1312,6 +1312,37 @@ test_project_key_sanitize_accepts_and_rejects() {
   pass "fm_backend_herdr_project_key_sanitize: accepts safe keys and rejects empty, leading-dot, whitespace, and slash-bearing keys"
 }
 
+test_project_key_for_path_disambiguates_same_basename() {
+  local dir key1 key2 key1b
+  dir="$TMP_ROOT/project-key-for-path"
+  mkdir -p "$dir/oss/frontend" "$dir/work/frontend"
+  key1=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_key_for_path "$1"' "$ROOT" "$dir/oss/frontend") \
+    || fail "fm_backend_herdr_project_key_for_path should accept a safe basename"
+  key2=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_key_for_path "$1"' "$ROOT" "$dir/work/frontend") \
+    || fail "fm_backend_herdr_project_key_for_path should accept a safe basename"
+  [ "$key1" != "$key2" ] \
+    || fail "two different absolute paths sharing a basename must get distinct project keys, both resolved to '$key1'"
+  case "$key1" in frontend-????????) : ;; *) fail "expected key1 to be 'frontend-<8 hex chars>', got '$key1'" ;; esac
+  case "$key2" in frontend-????????) : ;; *) fail "expected key2 to be 'frontend-<8 hex chars>', got '$key2'" ;; esac
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_key_sanitize "$1" >/dev/null' "$ROOT" "$key1" \
+    || fail "the composed key1 must itself pass fm_backend_herdr_project_key_sanitize"
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_key_sanitize "$1" >/dev/null' "$ROOT" "$key2" \
+    || fail "the composed key2 must itself pass fm_backend_herdr_project_key_sanitize"
+  key1b=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_key_for_path "$1"' "$ROOT" "$dir/oss/frontend")
+  [ "$key1b" = "$key1" ] || fail "the same absolute path must derive the SAME key on repeated calls, got '$key1b' vs '$key1'"
+  pass "fm_backend_herdr_project_key_for_path: two different absolute paths sharing a basename get distinct, stable, sanitize-safe keys"
+}
+
+test_project_key_for_path_rejects_unsafe_basename() {
+  local dir out
+  dir="$TMP_ROOT/project-key-for-path-unsafe"
+  mkdir -p "$dir/has space"
+  out=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_key_for_path "$1"' "$ROOT" "$dir/has space" 2>/dev/null) \
+    && fail "a basename containing a space must be rejected, got '$out'"
+  [ -z "$out" ] || fail "a rejected project key must produce no output, got '$out'"
+  pass "fm_backend_herdr_project_key_for_path: rejects a basename with unsafe characters instead of hashing around it"
+}
+
 test_project_workspace_label_format() {
   local out
   out=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_label myproj' "$ROOT")
@@ -4724,6 +4755,8 @@ test_presentation_enabled_project_never_projects_and_never_calls_herdr
 test_presentation_floor_warn_project_feature_has_no_override_hint
 test_presentation_floor_warn_default_feature_wording_unchanged
 test_project_key_sanitize_accepts_and_rejects
+test_project_key_for_path_disambiguates_same_basename
+test_project_key_for_path_rejects_unsafe_basename
 test_project_workspace_label_format
 test_project_workspace_record_round_trip
 test_project_workspace_record_snapshot_rejects_corruption

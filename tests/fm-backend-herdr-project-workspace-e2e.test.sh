@@ -68,12 +68,13 @@ herdr_forget_inherited_pane
 TMP_ROOT=$(mktemp -d "$(cd "${TMPDIR:-/tmp}" && pwd -P)/fm-herdr-proj-e2e.XXXXXX")
 SESSION="fm-lab-herdr-proj-e2e-$$"
 export HERDR_SESSION="$SESSION"
-WT1=; WT2=; WT3=; WT4=
+WT1=; WT2=; WT3=; WT4=; WT5=
 cleanup_all() {
   [ -n "$WT1" ] && command -v treehouse >/dev/null 2>&1 && treehouse return --force "$WT1" >/dev/null 2>&1
   [ -n "$WT2" ] && command -v treehouse >/dev/null 2>&1 && treehouse return --force "$WT2" >/dev/null 2>&1
   [ -n "$WT3" ] && command -v treehouse >/dev/null 2>&1 && treehouse return --force "$WT3" >/dev/null 2>&1
   [ -n "$WT4" ] && command -v treehouse >/dev/null 2>&1 && treehouse return --force "$WT4" >/dev/null 2>&1
+  [ -n "$WT5" ] && command -v treehouse >/dev/null 2>&1 && treehouse return --force "$WT5" >/dev/null 2>&1
   herdr_safe_stop_and_delete "$SESSION"
   rm -rf "$TMP_ROOT"
 }
@@ -88,9 +89,9 @@ fm_backend_source herdr || fail "fm_backend_source herdr failed"
 
 PRIMARY_HOME="$TMP_ROOT/primary-home"
 mkdir -p "$PRIMARY_HOME/state" "$PRIMARY_HOME/data/cm1" "$PRIMARY_HOME/data/cm2" \
-  "$PRIMARY_HOME/data/cm3" "$PRIMARY_HOME/data/cm4" "$PRIMARY_HOME/config"
+  "$PRIMARY_HOME/data/cm3" "$PRIMARY_HOME/data/cm4" "$PRIMARY_HOME/data/cm5" "$PRIMARY_HOME/config"
 printf 'project\n' > "$PRIMARY_HOME/config/herdr-presentation-spaces"
-for t in cm1 cm2 cm3 cm4; do
+for t in cm1 cm2 cm3 cm4 cm5; do
   cat > "$PRIMARY_HOME/data/$t/brief.md" <<EOF
 # Task
 ## Captain's intent
@@ -114,8 +115,11 @@ make_scratch_project() {  # <dir>
 
 PROJ1="$TMP_ROOT/proj-alpha"; make_scratch_project "$PROJ1"
 PROJ2="$TMP_ROOT/proj-beta"; make_scratch_project "$PROJ2"
-PROJ1_LABEL="proj-$(basename "$PROJ1")"
-PROJ2_LABEL="proj-$(basename "$PROJ2")"
+PROJ3="$TMP_ROOT/proj gamma"; make_scratch_project "$PROJ3"
+KEY1=$(fm_backend_herdr_project_key_for_path "$PROJ1") || fail "could not derive project alpha's project key"
+KEY2=$(fm_backend_herdr_project_key_for_path "$PROJ2") || fail "could not derive project beta's project key"
+PROJ1_LABEL="proj-$KEY1"
+PROJ2_LABEL="proj-$KEY2"
 PROJ1_RECORD="$PRIMARY_HOME/state/$PROJ1_LABEL.herdr-workspace"
 PROJ2_RECORD="$PRIMARY_HOME/state/$PROJ2_LABEL.herdr-workspace"
 
@@ -228,7 +232,7 @@ CM1_WSID=$(herdr pane get "$CM1_PANE" --session "$SESSION" 2>/dev/null | jq -r '
 CM1_WS_LABEL=$(herdr workspace list --session "$SESSION" 2>&1 | jq -r --arg id "$CM1_WSID" '.result.workspaces[]? | select(.workspace_id == $id) | .label')
 [ "$CM1_WS_LABEL" = "$PROJ1_LABEL" ] || fail "cm1 should land in '$PROJ1_LABEL', got '$CM1_WS_LABEL'"
 [ -f "$PROJ1_RECORD" ] || fail "no persisted project-workspace record at $PROJ1_RECORD"
-assert_contains_local "$(cat "$PROJ1_RECORD")" "project=$(basename "$PROJ1")" "project record missing its project key"
+assert_contains_local "$(cat "$PROJ1_RECORD")" "project=$KEY1" "project record missing its project key"
 assert_contains_local "$(cat "$PROJ1_RECORD")" "home=$PRIMARY_HOME" "project record missing its home"
 assert_contains_local "$(cat "$PROJ1_RECORD")" "session=$SESSION" "project record missing its session"
 assert_contains_local "$(cat "$PROJ1_RECORD")" "workspace_id=$CM1_WSID" "project record missing its workspace id"
@@ -332,8 +336,36 @@ CM3_WSID_AFTER=$(herdr pane get "$CM3_PANE" --session "$SESSION" 2>/dev/null | j
 [ "$CM3_WSID_AFTER" = "$CM3_WSID" ] || fail "project beta's workspace id must not change from unrelated project-alpha churn"
 pass "real herdr E2E: project beta's workspace and task were never affected by project alpha's teardown/self-heal"
 
+# --- 5. a project directory basename with characters unsafe for a workspace
+# label/record (here, a space) must fall back to the ordinary flat per-home
+# layout with a warning, never abort the spawn -------------------------------
+
+CM5_OUT="$TMP_ROOT/cm5.out"; CM5_ERR="$TMP_ROOT/cm5.err"
+FM_SPAWN_NO_GUARD=1 FM_HOME="$PRIMARY_HOME" FM_ROOT_OVERRIDE="$ROOT" \
+  "$ROOT/bin/fm-spawn.sh" cm5 "$PROJ3" "sh -c 'echo cm5-ok'" --mode no-mistakes --yolo off --backend herdr \
+  >"$CM5_OUT" 2>"$CM5_ERR"
+rc=$?
+[ "$rc" -eq 0 ] || fail "cm5 spawn into a space-bearing project directory should still succeed via flat fallback"$'\n'"--- stdout ---"$'\n'"$(cat "$CM5_OUT")"$'\n'"--- stderr ---"$'\n'"$(cat "$CM5_ERR")"
+CM5_META="$PRIMARY_HOME/state/cm5.meta"
+[ -f "$CM5_META" ] || fail "no meta written for cm5"
+WT5=$(grep '^worktree=' "$CM5_META" | cut -d= -f2-)
+CM5_PANE=$(grep '^herdr_pane_id=' "$CM5_META" | cut -d= -f2-)
+[ -n "$CM5_PANE" ] || fail "cm5 meta missing herdr_pane_id"
+CM5_WSID=$(herdr pane get "$CM5_PANE" --session "$SESSION" 2>/dev/null | jq -r '.result.pane.workspace_id // empty')
+[ -n "$CM5_WSID" ] || fail "could not read cm5's pane workspace_id"
+CM5_WS_LABEL=$(herdr workspace list --session "$SESSION" 2>&1 | jq -r --arg id "$CM5_WSID" '.result.workspaces[]? | select(.workspace_id == $id) | .label')
+[ "$CM5_WS_LABEL" = firstmate ] \
+  || fail "an unsafe project basename should fall back to the flat per-home workspace (label 'firstmate'), got '$CM5_WS_LABEL'"
+CM5_RECORD_COUNT=$(find "$PRIMARY_HOME/state" -maxdepth 1 -name '*.herdr-workspace' | wc -l | tr -d '[:space:]')
+[ "$CM5_RECORD_COUNT" -eq 2 ] \
+  || fail "an unsafe-basename spawn must never persist its own project-workspace record; expected only alpha's and beta's 2 records, found $CM5_RECORD_COUNT"
+grep -q "unsafe" "$CM5_ERR" \
+  || fail "the unsafe-basename fallback did not warn: $(cat "$CM5_ERR")"
+pass "real herdr E2E: a project directory basename with unsafe characters falls back flat with a warning instead of aborting the spawn"
+
 fm_backend_herdr_kill "$SESSION:$CM3_PANE"
 fm_backend_herdr_kill "$SESSION:$CM4_PANE"
+fm_backend_herdr_kill "$SESSION:$CM5_PANE"
 herdr workspace delete "$DECOY_WSID" --session "$SESSION" >/dev/null 2>&1 || true
 
 cleanup_all

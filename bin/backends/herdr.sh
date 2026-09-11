@@ -1874,6 +1874,40 @@ fm_backend_herdr_project_key_sanitize() {  # <project-key>
   printf '%s' "$key"
 }
 
+# fm_backend_herdr_project_key_hash: an 8-hex-char stable hash of an absolute
+# path. Same shasum/sha256sum/cksum fallback chain fm_backend_hometag already
+# uses (bin/fm-backend-hometag-lib.sh) to keep two on-disk paths from
+# colliding under one shared human-readable prefix.
+fm_backend_herdr_project_key_hash() {  # <abs-path>
+  local path=$1 hash
+  if command -v shasum >/dev/null 2>&1; then
+    hash=$(printf '%s' "$path" | shasum -a 256 | awk '{print substr($1,1,8)}')
+  elif command -v sha256sum >/dev/null 2>&1; then
+    hash=$(printf '%s' "$path" | sha256sum | awk '{print substr($1,1,8)}')
+  else
+    hash=$(printf '%s' "$path" | cksum | awk '{printf "%08x", $1}')
+  fi
+  printf '%s' "$hash"
+}
+
+# fm_backend_herdr_project_key_for_path: the collision-resistant project key
+# for one project-grouped workspace - the project directory's basename, kept
+# as a human-readable prefix (the same name bin/fm-project-mode.sh and
+# bin/fm-spawn.sh's own standing-mode lookup use), followed by a short hash
+# of the project's full absolute path. Two different projects that happen to
+# share a basename (e.g. ~/oss/frontend and ~/work/frontend) therefore never
+# resolve to the same persisted record or the same workspace label. Returns 1
+# with no output when the basename itself fails
+# fm_backend_herdr_project_key_sanitize (e.g. it contains a space or starts
+# with a dot); the caller decides whether that means falling back to the
+# ordinary flat per-home layout.
+fm_backend_herdr_project_key_for_path() {  # <abs-project-path>
+  local path=$1 base
+  base=$(basename "$path")
+  base=$(fm_backend_herdr_project_key_sanitize "$base") || return 1
+  printf '%s-%s' "$base" "$(fm_backend_herdr_project_key_hash "$path")"
+}
+
 # fm_backend_herdr_project_workspace_label: the herdr workspace label for one
 # project's shared task container - distinct from a per-home label
 # (fm_backend_herdr_workspace_label) and from a presentation-only per-task
