@@ -2301,13 +2301,14 @@ case "$BACKEND" in
       # lock of its own, exactly like the flat per-home path's own call to it.
       HERDR_SES=$(fm_backend_herdr_session)
       HERDR_PROJECT_KEY=$(fm_backend_herdr_project_key_for_path "$PROJ_ABS") || HERDR_PROJECT_KEY=
+      HERDR_PROJECT_BASENAME=$(fm_backend_herdr_project_key_basename "$PROJ_ABS") || HERDR_PROJECT_BASENAME=
       if ! fm_backend_herdr_presentation_default_supported "$STATE" "$HERDR_SES" project; then
         :
       elif [ -z "$HERDR_PROJECT_KEY" ]; then
         echo "warning: herdr project workspace key unsafe for '$(basename "$PROJ_ABS")' (unsupported characters); using the ordinary flat layout without project grouping" >&2
       elif spawn_herdr_presentation_order_lock_acquire "$HERDR_SES"; then
         set +e
-        HERDR_PROJECT_CONTAINER_RAW=$(fm_backend_herdr_project_container_ensure "$PROJ_ABS" "$STATE" "$HERDR_PROJECT_KEY")
+        HERDR_PROJECT_CONTAINER_RAW=$(fm_backend_herdr_project_container_ensure "$PROJ_ABS" "$STATE" "$HERDR_PROJECT_KEY" "$HERDR_PROJECT_BASENAME")
         HERDR_PROJECT_STATUS=$?
         set -e
         spawn_herdr_presentation_order_lock_release

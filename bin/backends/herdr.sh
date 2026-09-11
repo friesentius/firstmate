@@ -1908,6 +1908,18 @@ fm_backend_herdr_project_key_for_path() {  # <abs-project-path>
   printf '%s-%s' "$base" "$(fm_backend_herdr_project_key_hash "$path")"
 }
 
+# fm_backend_herdr_project_key_basename: the sanitized project directory
+# basename alone, with no path-disambiguating hash - the human-readable
+# portion used for the VISIBLE herdr workspace label and the persisted
+# record's own label= field, as distinct from
+# fm_backend_herdr_project_key_for_path's collision-resistant identity key.
+# The hash exists only to keep two differently-located same-named projects
+# from colliding on one record or workspace; it must never appear in
+# anything the captain actually sees.
+fm_backend_herdr_project_key_basename() {  # <abs-project-path>
+  fm_backend_herdr_project_key_sanitize "$(basename "$1")"
+}
+
 # fm_backend_herdr_project_workspace_label: the herdr workspace label for one
 # project's shared task container - distinct from a per-home label
 # (fm_backend_herdr_workspace_label) and from a presentation-only per-task
@@ -1948,8 +1960,12 @@ fm_backend_herdr_project_workspace_record_write() {  # <record> <project-key> <h
 # per-project workspace record without sourcing shell code - the same
 # discipline fm_backend_herdr_projection_journal_snapshot applies to the
 # per-task journal. Sets FM_BACKEND_HERDR_PROJECT_* globals on success.
-fm_backend_herdr_project_workspace_record_snapshot() {  # <record> <project-key>
-  local record=$1 key=$2 lines exact expected_label
+# <display-basename> is the record's project key stripped of its
+# path-disambiguating hash (fm_backend_herdr_project_key_basename) - the
+# stored label= field is checked against THAT, not against <project-key>,
+# since the visible label deliberately excludes the hash.
+fm_backend_herdr_project_workspace_record_snapshot() {  # <record> <project-key> <display-basename>
+  local record=$1 key=$2 basename_key=$3 lines exact expected_label
   FM_BACKEND_HERDR_PROJECT_HOME=""
   FM_BACKEND_HERDR_PROJECT_SESSION=""
   FM_BACKEND_HERDR_PROJECT_WORKSPACE_ID=""
@@ -1971,7 +1987,7 @@ fm_backend_herdr_project_workspace_record_snapshot() {  # <record> <project-key>
       ''|*[[:space:]]*) return 1 ;;
     esac
   done
-  expected_label=$(fm_backend_herdr_project_workspace_label "$key")
+  expected_label=$(fm_backend_herdr_project_workspace_label "$basename_key")
   [ "$FM_BACKEND_HERDR_PROJECT_LABEL" = "$expected_label" ]
 }
 
@@ -1992,20 +2008,32 @@ fm_backend_herdr_project_workspace_record_snapshot() {  # <record> <project-key>
 #   FM_BACKEND_HERDR_PROJECT_WS_SEEDED_TAB_ID - non-empty ONLY when THIS call
 #                                      just CREATED the workspace; empty when
 #                                      an existing verified record was adopted.
-# Returns 0 on success, 1 for an invalid project key or a failed or
-# unparseable herdr call.
-fm_backend_herdr_project_workspace_ensure() {  # <session> <cwd> <state-dir> <project-key>
-  local session=$1 cwd=$2 state=$3 raw_key=$4 key record home_id out wsid label
+# <project-key> is the collision-resistant identity
+# (fm_backend_herdr_project_key_for_path) used for the persisted record's
+# path and its project= field; <display-basename>
+# (fm_backend_herdr_project_key_basename) is that same project's basename
+# alone, with no path hash, used for the actual herdr --label and the
+# record's own label= field, so the hash that keeps two same-named projects
+# from colliding never reaches anything the captain sees.
+# Returns 0 on success, 1 for an invalid project key or basename, or a
+# failed or unparseable herdr call.
+fm_backend_herdr_project_workspace_ensure() {  # <session> <cwd> <state-dir> <project-key> <display-basename>
+  local session=$1 cwd=$2 state=$3 raw_key=$4 raw_basename=$5
+  local key basename_key record home_id out wsid label
   FM_BACKEND_HERDR_PROJECT_WS_ID=""
   FM_BACKEND_HERDR_PROJECT_WS_SEEDED_TAB_ID=""
   key=$(fm_backend_herdr_project_key_sanitize "$raw_key") || {
     echo "error: invalid project key for herdr project workspace" >&2
     return 1
   }
+  basename_key=$(fm_backend_herdr_project_key_sanitize "$raw_basename") || {
+    echo "error: invalid project display name for herdr project workspace" >&2
+    return 1
+  }
   record=$(fm_backend_herdr_project_workspace_record_path "$state" "$key")
   home_id=$(fm_backend_herdr_projection_home_identity "$FM_HOME" 2>/dev/null || true)
   if [ -n "$home_id" ] \
-    && fm_backend_herdr_project_workspace_record_snapshot "$record" "$key" \
+    && fm_backend_herdr_project_workspace_record_snapshot "$record" "$key" "$basename_key" \
     && [ "$FM_BACKEND_HERDR_PROJECT_HOME" = "$home_id" ] \
     && [ "$FM_BACKEND_HERDR_PROJECT_SESSION" = "$session" ] \
     && [ "$(fm_backend_herdr_workspace_presence_state "$session" "$FM_BACKEND_HERDR_PROJECT_WORKSPACE_ID")" = present ]; then
@@ -2013,7 +2041,7 @@ fm_backend_herdr_project_workspace_ensure() {  # <session> <cwd> <state-dir> <pr
     printf '%s' "$FM_BACKEND_HERDR_PROJECT_WS_ID"
     return 0
   fi
-  label=$(fm_backend_herdr_project_workspace_label "$key")
+  label=$(fm_backend_herdr_project_workspace_label "$basename_key")
   out=$(fm_backend_herdr_cli "$session" workspace create --cwd "$cwd" --label "$label" --no-focus 2>/dev/null) || return 1
   wsid=$(printf '%s' "$out" | jq -r '.result.workspace.workspace_id // empty' 2>/dev/null)
   [ -n "$wsid" ] || return 1
@@ -2035,15 +2063,17 @@ fm_backend_herdr_project_workspace_ensure() {  # <session> <cwd> <state-dir> <pr
 # container-ensure sequence (version gate, server, project workspace). Echoes
 # "<session>:<workspace_id>\t<seeded_default_tab_id>" - byte-identical shape to
 # fm_backend_herdr_container_ensure, so it plugs into the existing
-# fm_backend_herdr_create_task call unchanged.
-fm_backend_herdr_project_container_ensure() {  # <cwd> <state-dir> <project-key>
-  local cwd=${1:-$PWD} state=$2 key=$3 session status
+# fm_backend_herdr_create_task call unchanged. <project-key> and
+# <display-basename> are passed straight through to
+# fm_backend_herdr_project_workspace_ensure, which owns their meaning.
+fm_backend_herdr_project_container_ensure() {  # <cwd> <state-dir> <project-key> <display-basename>
+  local cwd=${1:-$PWD} state=$2 key=$3 basename_key=$4 session status
   fm_backend_herdr_version_check || return 1
   session=$(fm_backend_herdr_session)
   fm_backend_herdr_server_ensure "$session" || return 1
-  fm_backend_herdr_project_workspace_ensure "$session" "$cwd" "$state" "$key" >/dev/null && status=0 || status=$?
+  fm_backend_herdr_project_workspace_ensure "$session" "$cwd" "$state" "$key" "$basename_key" >/dev/null && status=0 || status=$?
   if [ "$status" -ne 0 ] || [ -z "$FM_BACKEND_HERDR_PROJECT_WS_ID" ]; then
-    echo "error: failed to ensure herdr project workspace 'proj-$key' in session '$session'" >&2
+    echo "error: failed to ensure herdr project workspace 'proj-$basename_key' in session '$session'" >&2
     return 1
   fi
   printf '%s:%s\t%s' "$session" "$FM_BACKEND_HERDR_PROJECT_WS_ID" "$FM_BACKEND_HERDR_PROJECT_WS_SEEDED_TAB_ID"

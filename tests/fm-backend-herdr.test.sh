@@ -1343,6 +1343,21 @@ test_project_key_for_path_rejects_unsafe_basename() {
   pass "fm_backend_herdr_project_key_for_path: rejects a basename with unsafe characters instead of hashing around it"
 }
 
+test_project_key_basename_excludes_hash() {
+  local dir out out2
+  dir="$TMP_ROOT/project-key-basename"
+  mkdir -p "$dir/oss/frontend" "$dir/work/frontend"
+  out=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_key_basename "$1"' "$ROOT" "$dir/oss/frontend") \
+    || fail "fm_backend_herdr_project_key_basename should accept a safe basename"
+  [ "$out" = frontend ] || fail "expected the plain basename 'frontend' with no path-disambiguating hash, got '$out'"
+  out2=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_key_basename "$1"' "$ROOT" "$dir/work/frontend")
+  [ "$out2" = "$out" ] \
+    || fail "two different absolute paths sharing a basename must still resolve to the SAME display basename (only fm_backend_herdr_project_key_for_path disambiguates), got '$out' vs '$out2'"
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_key_basename "$1"' "$ROOT" "$dir/has space" 2>/dev/null \
+    && fail "an unsafe basename must be rejected the same way fm_backend_herdr_project_key_for_path rejects it"
+  pass "fm_backend_herdr_project_key_basename: returns the sanitized basename alone, identical for two differently-located same-named projects, with no hash suffix"
+}
+
 test_project_workspace_label_format() {
   local out
   out=$(bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_label myproj' "$ROOT")
@@ -1359,7 +1374,7 @@ test_project_workspace_record_round_trip() {
     . "$0/bin/backends/herdr.sh"
     record=$(fm_backend_herdr_project_workspace_record_path "$1" myproj)
     fm_backend_herdr_project_workspace_record_write "$record" myproj "$2" sess1 w7 proj-myproj || exit 1
-    fm_backend_herdr_project_workspace_record_snapshot "$record" myproj || exit 1
+    fm_backend_herdr_project_workspace_record_snapshot "$record" myproj myproj || exit 1
     printf "%s\n%s\n%s\n%s\n" \
       "$FM_BACKEND_HERDR_PROJECT_HOME" "$FM_BACKEND_HERDR_PROJECT_SESSION" \
       "$FM_BACKEND_HERDR_PROJECT_WORKSPACE_ID" "$FM_BACKEND_HERDR_PROJECT_LABEL"
@@ -1381,31 +1396,35 @@ test_project_workspace_record_snapshot_rejects_corruption() {
   record="$state/proj-myproj.herdr-workspace"
 
   printf 'project=myproj\nhome=relative/path\nsession=sess1\nworkspace_id=w1\nlabel=proj-myproj\n' > "$record"
-  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj' "$ROOT" "$record" \
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj myproj' "$ROOT" "$record" \
     && fail "a non-absolute home must be rejected"
 
   printf 'project=myproj\nhome=/abs\nsession=sess 1\nworkspace_id=w1\nlabel=proj-myproj\n' > "$record"
-  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj' "$ROOT" "$record" \
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj myproj' "$ROOT" "$record" \
     && fail "whitespace inside the session field must be rejected"
 
   printf 'project=myproj\nhome=/abs\nsession=sess1\nworkspace_id=w1\nlabel=proj-somethingelse\n' > "$record"
-  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj' "$ROOT" "$record" \
-    && fail "a label that does not match this project key's derived label must be rejected"
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj myproj' "$ROOT" "$record" \
+    && fail "a label that does not match this project's derived display label must be rejected"
 
   printf 'project=myproj\nhome=/abs\nsession=sess1\nworkspace_id=w1\nlabel=proj-myproj\n' > "$record"
-  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" someoneelse' "$ROOT" "$record" \
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" someoneelse someoneelse' "$ROOT" "$record" \
     && fail "a record for a different project key must be rejected"
 
   printf 'project=myproj\nhome=/abs\nsession=sess1\nworkspace_id=w1\nlabel=proj-myproj\nextra=1\n' > "$record"
-  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj' "$ROOT" "$record" \
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj myproj' "$ROOT" "$record" \
     && fail "a record with an unexpected extra field must be rejected"
 
   printf 'project=myproj\nhome=/abs\nsession=sess1\nworkspace_id=w1\nlabel=proj-myproj\n' > "$dir/target"
   ln -s "$dir/target" "$state/proj-symlinked.herdr-workspace"
-  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj' "$ROOT" "$state/proj-symlinked.herdr-workspace" \
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj myproj' "$ROOT" "$state/proj-symlinked.herdr-workspace" \
     && fail "a symlinked project workspace record must be refused, mirroring the presentation journal's own symlink defense"
 
-  pass "fm_backend_herdr_project_workspace_record_snapshot: refuses a non-absolute home, whitespace fields, a label mismatch, a wrong project key, an unexpected field count, and a symlinked record"
+  printf 'project=myproj-a3f9c21c\nhome=/abs\nsession=sess1\nworkspace_id=w1\nlabel=proj-myproj-a3f9c21c\n' > "$record"
+  bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_workspace_record_snapshot "$1" myproj-a3f9c21c myproj' "$ROOT" "$record" \
+    && fail "a stored label carrying the collision-resistant key's hash suffix (instead of the plain display basename) must be rejected"
+
+  pass "fm_backend_herdr_project_workspace_record_snapshot: refuses a non-absolute home, whitespace fields, a label mismatch (including a hash-bearing label), a wrong project key, an unexpected field count, and a symlinked record"
 }
 
 test_project_container_ensure_reuses_and_self_heals_after_removal() {
@@ -1413,18 +1432,30 @@ test_project_container_ensure_reuses_and_self_heals_after_removal() {
   dir="$TMP_ROOT/project-container-cycles"; mkdir -p "$dir"; log="$dir/log"; state="$dir/state.json"; : > "$log"
   fb=$(make_herdr_statefake "$dir")
 
+  # <project-key> here mimics fm_backend_herdr_project_key_for_path's
+  # collision-resistant shape (basename-hash); <display-basename> is the
+  # plain project name alone. The record file/identity must use the former,
+  # while the actual herdr workspace label must use only the latter - never
+  # the hash suffix.
   raw1=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_FAKE_HERDR_STATE="$state" HERDR_SESSION=fmtest \
-    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_container_ensure /proj "$1" alpha' "$ROOT" "$dir/fmstate" ) \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_container_ensure /proj "$1" alpha-deadbeef alpha' "$ROOT" "$dir/fmstate" ) \
     || fail "first project_container_ensure call failed"
   container1=${raw1%%$'\t'*}; seeded1=${raw1#*$'\t'}
   wsid1=${container1#*:}
   [ -n "$seeded1" ] || fail "the first call should create a fresh project workspace and report its seeded default tab id"
-  [ -f "$dir/fmstate/proj-alpha.herdr-workspace" ] || fail "the first call should persist a project workspace record"
+  [ -f "$dir/fmstate/proj-alpha-deadbeef.herdr-workspace" ] \
+    || fail "the first call should persist a project workspace record under the collision-resistant key, not the plain basename"
+  [ ! -e "$dir/fmstate/proj-alpha.herdr-workspace" ] \
+    || fail "no record should ever be filed under the plain basename alone"
   jq -r --arg w "$wsid1" '.workspaces[]|select(.workspace_id==$w)|.label' "$state" | grep -qx proj-alpha \
-    || fail "the created workspace should be labeled 'proj-alpha'"
+    || fail "the created workspace should be labeled 'proj-alpha', with no hash suffix leaking into the visible label"
+  assert_contains "$(cat "$dir/fmstate/proj-alpha-deadbeef.herdr-workspace")" "project=alpha-deadbeef" \
+    "the record's project= field must carry the full collision-resistant key"
+  assert_contains "$(cat "$dir/fmstate/proj-alpha-deadbeef.herdr-workspace")" "label=proj-alpha" \
+    "the record's own label= field must carry the clean, hash-free display label"
 
   raw2=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_FAKE_HERDR_STATE="$state" HERDR_SESSION=fmtest \
-    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_container_ensure /proj "$1" alpha' "$ROOT" "$dir/fmstate" ) \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_container_ensure /proj "$1" alpha-deadbeef alpha' "$ROOT" "$dir/fmstate" ) \
     || fail "second project_container_ensure call failed"
   container2=${raw2%%$'\t'*}; seeded2=${raw2#*$'\t'}
   wsid2=${container2#*:}
@@ -1437,16 +1468,18 @@ test_project_container_ensure_reuses_and_self_heals_after_removal() {
     | .tabs |= [.[]|select(.workspace_id != $w)]' "$state" > "$state.tmp" && mv "$state.tmp" "$state"
 
   raw3=$( PATH="$fb:$PATH" FM_HERDR_LOG="$log" FM_FAKE_HERDR_STATE="$state" HERDR_SESSION=fmtest \
-    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_container_ensure /proj "$1" alpha' "$ROOT" "$dir/fmstate" ) \
+    bash -c '. "$0/bin/backends/herdr.sh"; fm_backend_herdr_project_container_ensure /proj "$1" alpha-deadbeef alpha' "$ROOT" "$dir/fmstate" ) \
     || fail "third project_container_ensure call (after removal) failed"
   container3=${raw3%%$'\t'*}; seeded3=${raw3#*$'\t'}
   wsid3=${container3#*:}
   [ "$wsid3" != "$wsid1" ] || fail "a stale record naming a now-removed workspace must self-heal into a FRESH workspace, not reuse the dead id"
   [ -n "$seeded3" ] || fail "the self-healed workspace is a fresh create and should report a seeded default tab id"
-  assert_contains "$(cat "$dir/fmstate/proj-alpha.herdr-workspace")" "workspace_id=$wsid3" \
+  assert_contains "$(cat "$dir/fmstate/proj-alpha-deadbeef.herdr-workspace")" "workspace_id=$wsid3" \
     "the project record must be rewritten to the self-healed workspace id"
+  jq -r --arg w "$wsid3" '.workspaces[]|select(.workspace_id==$w)|.label' "$state" | grep -qx proj-alpha \
+    || fail "the self-healed workspace must still be labeled 'proj-alpha' with no hash suffix"
 
-  pass "fm_backend_herdr_project_container_ensure: reuses one project's shared workspace across spawns and self-heals with a fresh one once the record's workspace is confirmed gone"
+  pass "fm_backend_herdr_project_container_ensure: reuses one project's shared workspace across spawns, self-heals with a fresh one once the record's workspace is confirmed gone, and keeps the visible label free of the record's collision-resistant hash"
 }
 
 test_projection_journal_is_atomic_and_uses_128_bit_token() {
@@ -4757,6 +4790,7 @@ test_presentation_floor_warn_default_feature_wording_unchanged
 test_project_key_sanitize_accepts_and_rejects
 test_project_key_for_path_disambiguates_same_basename
 test_project_key_for_path_rejects_unsafe_basename
+test_project_key_basename_excludes_hash
 test_project_workspace_label_format
 test_project_workspace_record_round_trip
 test_project_workspace_record_snapshot_rejects_corruption

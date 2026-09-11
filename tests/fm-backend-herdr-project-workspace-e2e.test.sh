@@ -40,6 +40,13 @@
 #     lab measures its own real herdr session's release and asserts whichever
 #     branch that release actually classifies to, exactly like
 #     tests/fm-backend-herdr-presentation-e2e.test.sh's below-floor case
+#   - a project directory basename with characters unsafe for a workspace
+#     label or record filename falls back flat with a warning instead of
+#     aborting the spawn
+#   - the record's own collision-resistant identity key (basename plus a
+#     path hash, so two differently-located same-named projects never
+#     collide) never leaks into the VISIBLE herdr workspace label or the
+#     record's own label= field, which both stay the plain project basename
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -116,12 +123,20 @@ make_scratch_project() {  # <dir>
 PROJ1="$TMP_ROOT/proj-alpha"; make_scratch_project "$PROJ1"
 PROJ2="$TMP_ROOT/proj-beta"; make_scratch_project "$PROJ2"
 PROJ3="$TMP_ROOT/proj gamma"; make_scratch_project "$PROJ3"
+# KEY1/KEY2 are the collision-resistant record identity (basename+hash);
+# BASENAME1/BASENAME2 are the plain sanitized basename alone. The record
+# file/its project= field use the key, while the VISIBLE herdr label and the
+# record's own label= field must use only the basename - the hash must never
+# reach anything the captain sees (docs/herdr-backend.md "Project workspace
+# grouping").
 KEY1=$(fm_backend_herdr_project_key_for_path "$PROJ1") || fail "could not derive project alpha's project key"
 KEY2=$(fm_backend_herdr_project_key_for_path "$PROJ2") || fail "could not derive project beta's project key"
-PROJ1_LABEL="proj-$KEY1"
-PROJ2_LABEL="proj-$KEY2"
-PROJ1_RECORD="$PRIMARY_HOME/state/$PROJ1_LABEL.herdr-workspace"
-PROJ2_RECORD="$PRIMARY_HOME/state/$PROJ2_LABEL.herdr-workspace"
+BASENAME1=$(fm_backend_herdr_project_key_basename "$PROJ1") || fail "could not derive project alpha's display basename"
+BASENAME2=$(fm_backend_herdr_project_key_basename "$PROJ2") || fail "could not derive project beta's display basename"
+PROJ1_LABEL="proj-$BASENAME1"
+PROJ2_LABEL="proj-$BASENAME2"
+PROJ1_RECORD="$PRIMARY_HOME/state/proj-$KEY1.herdr-workspace"
+PROJ2_RECORD="$PRIMARY_HOME/state/proj-$KEY2.herdr-workspace"
 
 # --- 0. a pre-existing, unrelated workspace already carries PROJ2's own
 # label. Project-grouped placement must never adopt it by label search alone
@@ -236,7 +251,8 @@ assert_contains_local "$(cat "$PROJ1_RECORD")" "project=$KEY1" "project record m
 assert_contains_local "$(cat "$PROJ1_RECORD")" "home=$PRIMARY_HOME" "project record missing its home"
 assert_contains_local "$(cat "$PROJ1_RECORD")" "session=$SESSION" "project record missing its session"
 assert_contains_local "$(cat "$PROJ1_RECORD")" "workspace_id=$CM1_WSID" "project record missing its workspace id"
-assert_contains_local "$(cat "$PROJ1_RECORD")" "label=$PROJ1_LABEL" "project record missing its label"
+grep -qx "label=$PROJ1_LABEL" "$PROJ1_RECORD" \
+  || fail "project record's label= field must be exactly '$PROJ1_LABEL' with no hash suffix, got: $(cat "$PROJ1_RECORD")"
 pass "real herdr E2E: cm1 landed in the persisted project-alpha workspace with a correct record"
 
 CM2_OUT="$TMP_ROOT/cm2.out"; CM2_ERR="$TMP_ROOT/cm2.err"
