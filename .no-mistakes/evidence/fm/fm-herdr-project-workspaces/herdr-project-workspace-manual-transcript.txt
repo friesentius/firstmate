@@ -1,0 +1,103 @@
+=== herdr project-workspace grouping: manual verification transcript ===
+Date: 2026-09-11T15:10:45Z
+Intent: create a herdr workspace for each project; a tab per worker/task in it; close tabs/workspace when done.
+
+--- Step 1: spawn cm1 for project 'checkout-service' (config/herdr-presentation-spaces=project) ---
+warning: /tmp/fm-herdr-manual.6oij8M/primary-home/data/cm1/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned cm1 harness=sh kind=ship mode=no-mistakes yolo=off window=fm-lab-herdr-manual-1440173:w1:p2 worktree=/home/friesent/.treehouse/checkout-service-2ce3f5/1/checkout-service
+
+--- Step 2: spawn cm2, a SECOND task for the SAME project 'checkout-service' ---
+warning: /tmp/fm-herdr-manual.6oij8M/primary-home/data/cm2/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned cm2 harness=sh kind=ship mode=no-mistakes yolo=off window=fm-lab-herdr-manual-1440173:w1:p3 worktree=/home/friesent/.treehouse/checkout-service-2ce3f5/2/checkout-service
+
+--- Step 3: spawn cm3 for a DIFFERENT project 'billing-service' ---
+warning: /tmp/fm-herdr-manual.6oij8M/primary-home/data/cm3/launch-brief.md records no delivery contract line (scaffolded before ship briefs recorded one); launching on the explicit --mode no-mistakes - confirm its definition of done matches
+spawned cm3 harness=sh kind=ship mode=no-mistakes yolo=off window=fm-lab-herdr-manual-1440173:w2:p2 worktree=/home/friesent/.treehouse/billing-service-9f9de4/1/billing-service
+
+--- Live herdr state after all 3 spawns: 'herdr workspace list' ---
+{
+  "workspace_id": "w1",
+  "label": "proj-checkout-service-69ec1087"
+}
+{
+  "workspace_id": "w2",
+  "label": "proj-billing-service-d4093c42"
+}
+
+--- Live herdr state: 'herdr tab list' per workspace (tabs = per-task tabs inside the project's workspace) ---
+checkout-service workspace (w1):
+{
+  "tab_id": "w1:t2",
+  "label": "fm-cm1"
+}
+{
+  "tab_id": "w1:t3",
+  "label": "fm-cm2"
+}
+billing-service workspace (w2):
+{
+  "tab_id": "w2:t2",
+  "label": "fm-cm3"
+}
+
+OBSERVED: cm1 workspace_id=w1, cm2 workspace_id=w1 (same project -> same workspace: YES)
+OBSERVED: cm3 workspace_id=w2 (different project -> distinct workspace from cm1/cm2: YES)
+
+--- Persisted per-project workspace records in $FM_HOME/state ---
+/tmp/fm-herdr-manual.6oij8M/primary-home/state/proj-billing-service-d4093c42.herdr-workspace:
+    project=billing-service-d4093c42
+    home=/tmp/fm-herdr-manual.6oij8M/primary-home
+    session=fm-lab-herdr-manual-1440173
+    workspace_id=w2
+    label=proj-billing-service-d4093c42
+/tmp/fm-herdr-manual.6oij8M/primary-home/state/proj-checkout-service-69ec1087.herdr-workspace:
+    project=checkout-service-69ec1087
+    home=/tmp/fm-herdr-manual.6oij8M/primary-home
+    session=fm-lab-herdr-manual-1440173
+    workspace_id=w1
+    label=proj-checkout-service-69ec1087
+
+--- Step 4: tear down cm1 (checkout-service still has cm2 running) ---
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+●  WATCHER DOWN - SUPERVISION IS OFF
+●  3 task(s) in flight, but no watcher has a fresh beacon (last beat: never, grace 300s).
+●  Trust the emitted supervision protocol for this harness; do not use shell & for watcher repair.
+●  This is a supervision warning only; the guarded operation WILL still run.
+●  watcher supervision needs Stop-owned automatic recovery; inspect the hook registration and startup status before ending the turn.
+●━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+warning: lsof is unavailable; cannot resolve a process-group fallback for herdr task cm1
+🌳 Terminated lingering processes: zsh (1440776)
+🌳 Worktree returned to pool.
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+/tmp/fm-herdr-manual.6oij8M/checkout-service: already current
+teardown cm1 complete (window fm-lab-herdr-manual-1440173:w1:p2, worktree /home/friesent/.treehouse/checkout-service-2ce3f5/1/checkout-service)
+Backlog: cm1 just finished (this home keeps no backlog at /tmp/fm-herdr-manual.6oij8M/primary-home/data/backlog.md). Update /tmp/fm-herdr-manual.6oij8M/primary-home/data/backlog.md - move cm1 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+checkout-service workspace still present after closing only cm1's tab: YES (expected YES - cm2's tab keeps it alive)
+
+--- Step 5: tear down cm2, checkout-service's LAST task ---
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+warning: lsof is unavailable; cannot resolve a process-group fallback for herdr task cm2
+🌳 Terminated lingering processes: zsh (1441848)
+🌳 Worktree returned to pool.
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+/tmp/fm-herdr-manual.6oij8M/checkout-service: already current
+teardown cm2 complete (window fm-lab-herdr-manual-1440173:w1:p3, worktree /home/friesent/.treehouse/checkout-service-2ce3f5/2/checkout-service)
+Backlog: cm2 just finished (this home keeps no backlog at /tmp/fm-herdr-manual.6oij8M/primary-home/data/backlog.md). Update /tmp/fm-herdr-manual.6oij8M/primary-home/data/backlog.md - move cm2 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+checkout-service workspace present after closing cm2 (its last task): NO (expected NO - workspace closes when its last tab closes)
+
+--- Final herdr state: 'herdr workspace list' ---
+{
+  "workspace_id": "w2",
+  "label": "proj-billing-service-d4093c42"
+}
+
+--- Step 6: tear down cm3 (billing-service's last task) so no lab workspaces remain ---
+WARNING: watcher still down (same stale episode; last beat: never, grace 300s) - full banner already printed this episode.
+warning: lsof is unavailable; cannot resolve a process-group fallback for herdr task cm3
+🌳 Terminated lingering processes: zsh (1443151)
+🌳 Worktree returned to pool.
+/tmp/fm-herdr-manual.6oij8M/billing-service: already current
+teardown cm3 complete (window fm-lab-herdr-manual-1440173:w2:p2, worktree /home/friesent/.treehouse/billing-service-9f9de4/1/billing-service)
+Backlog: cm3 just finished (this home keeps no backlog at /tmp/fm-herdr-manual.6oij8M/primary-home/data/backlog.md). Update /tmp/fm-herdr-manual.6oij8M/primary-home/data/backlog.md - move cm3 to Done, keep Done to the 10 most recent, then re-scan Queued and dispatch only work whose blockers are gone and date is due.
+
+=== RESULT: PASS - one workspace per project, one tab per task, workspace closes when drained ===
