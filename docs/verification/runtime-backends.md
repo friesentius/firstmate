@@ -204,6 +204,29 @@ Valid cleanup removed only the exact task-bound target and left the control wind
 The metadata-only validation covers tmux, Herdr, Zellij, Orca, and cmux before backend dispatch.
 Claude, Codex, OpenCode, Pi, pi-signed, Grok, Kimi, Cursor, and Muse share that backend cleanup boundary; their harness-specific hook files, tokens, transcript bindings, and session-log sidecars are cleaned only after it, so no harness needs a separate endpoint parser.
 
+### Claude trust dialog key sequence
+
+Claude Code's fresh-worktree trust dialog defaults its highlight to "No, exit", not "Yes, I trust this folder", so a plain `Enter` accepts the exit option and quits the worker instead of confirming trust.
+Reproduced and fixed live on 2026-09-16 with Claude Code 2.1.273 in an isolated tmux socket against two disposable, never-before-trusted scratch git repositories, using the exact tmux path `fm-send.sh --key` resolves to (`bin/backends/tmux.sh`'s `fm_backend_tmux_send_key`: `tmux send-keys -t "$target" "$key"`).
+
+```sh
+tmux -L "$SOCKET" new-session -d -s repro -x 200 -y 50 -c "$SCRATCH/proj1" -- claude
+# captured dialog: "❯ No, exit" / "  Yes, I trust this folder"
+tmux -L "$SOCKET" send-keys -t repro Enter
+# result: tmux server exited (claude quit); "No, exit" was confirmed
+```
+
+```sh
+tmux -L "$SOCKET2" new-session -d -s repro2 -x 200 -y 50 -c "$SCRATCH2/proj2" -- claude
+tmux -L "$SOCKET2" send-keys -t repro2 Down
+# captured dialog: "  No, exit" / "❯ Yes, I trust this folder"
+tmux -L "$SOCKET2" send-keys -t repro2 Enter
+# result: pane alive, composer empty and ready ("Claude Code v2.1.273" banner, "-- INSERT --" status line)
+```
+
+`.agents/skills/harness-adapters/references/harness/claude.md` documents the corrected `Down` then `Enter` sequence.
+This is a rendered-dialog fact with no portable process-only signal, so it is recorded here as maintainer-verification evidence rather than pinned by a portable `tests/` regression; refresh it after any Claude Code upgrade by repeating the commands above against a disposable, never-before-trusted worktree.
+
 ## Composer classification matrix
 
 The shared composer classifier (`bin/fm-composer-lib.sh`, `fm_composer_classify_screen`) owns every composer shape fleet-wide; each backend contributes only a capture and a capability descriptor.
