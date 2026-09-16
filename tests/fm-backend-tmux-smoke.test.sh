@@ -82,6 +82,14 @@ pass "real tmux: fm_backend_tmux_create_task creates a window and refuses a dupl
 
 # --- send text + Enter -------------------------------------------------------
 
+# A brand-new pane's shell has not yet installed its own SIGINT handler, so a
+# C-c sent in the same instant as window creation can deliver the default
+# terminate action and kill the pane outright (observed reproducibly with a
+# zero-delay send on this host, with both zsh and bash) rather than merely
+# interrupting a partial line. Give the shell a moment to finish that startup
+# handshake before the retry loop below starts sending it C-c.
+sleep 0.2
+
 # A newly-created interactive shell can exist before its startup files and line
 # editor are ready to accept Enter. Prove command execution with an output token
 # that does not appear contiguously in the command, retrying the harmless probe
