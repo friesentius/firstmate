@@ -81,7 +81,10 @@ TARGET=$(awk -F= '/^window=/{print $2}' "$LAB/state/$TASK.meta")
 for _ in $(seq 1 45); do
   CAPTURE=$(fm_backend_cmux_capture "$TARGET" 200 "$TASK" 2>/dev/null || true)
   case "$CAPTURE" in
-    *'Yes, I trust this folder'*) FM_HOME="$LAB" "$ROOT/bin/fm-send.sh" "$TASK" --key Enter || fail "could not accept Claude's folder-trust prompt" ;;
+    *'Yes, I trust this folder'*)
+      FM_HOME="$LAB" "$ROOT/bin/fm-send.sh" "$TASK" --key Down || fail "could not accept Claude's folder-trust prompt"
+      FM_HOME="$LAB" "$ROOT/bin/fm-send.sh" "$TASK" --key Enter || fail "could not accept Claude's folder-trust prompt"
+      ;;
   esac
   grep -q '^needs-decision \[key=probe-decision\]' "$STATUS" 2>/dev/null && break
   sleep 2

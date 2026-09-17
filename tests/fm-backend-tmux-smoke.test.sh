@@ -6,6 +6,13 @@
 # this repo fakes tmux; this one is the one place that talks to a REAL tmux
 # server, isolated on a private socket (`-L`) so it never touches the host's
 # actual sessions.
+#
+# It also pins the ordered multi-key delivery fm_backend_tmux_send_key gives
+# fm-send.sh's --key path, which .agents/skills/harness-adapters/references/
+# harness/claude.md's Claude trust-dialog recipe depends on: a real two-option
+# arrow-menu stand-in process (no Claude harness needed) proves that a bare
+# Enter confirms whatever is highlighted by default while Down then Enter
+# lands on the second option, so the two sequences provably diverge.
 set -u
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -74,6 +81,14 @@ fi
 pass "real tmux: fm_backend_tmux_create_task creates a window and refuses a duplicate"
 
 # --- send text + Enter -------------------------------------------------------
+
+# A brand-new pane's shell has not yet installed its own SIGINT handler, so a
+# C-c sent in the same instant as window creation can deliver the default
+# terminate action and kill the pane outright (observed reproducibly with a
+# zero-delay send on this host, with both zsh and bash) rather than merely
+# interrupting a partial line. Give the shell a moment to finish that startup
+# handshake before the retry loop below starts sending it C-c.
+sleep 0.2
 
 # A newly-created interactive shell can exist before its startup files and line
 # editor are ready to accept Enter. Prove command execution with an output token
@@ -168,6 +183,81 @@ state=$(fm_backend_agent_state tmux "$TARGET")
 # Best-effort contract: killing an already-gone window must not error.
 fm_backend_tmux_kill "$TARGET" || fail "fm_backend_tmux_kill on an already-dead target must stay best-effort (never fail)"
 pass "real tmux: kill removes the window and the readable session inventory authoritatively classifies it missing"
+
+# --- fm_backend_tmux_send_key: ordered multi-key delivery to a real process --
+
+command -v python3 >/dev/null 2>&1 || fail "python3 is required for the ordered-key-delivery check"
+MENU_PY="$SHIM_DIR/menu.py"
+cat > "$MENU_PY" <<'PY'
+#!/usr/bin/env python3
+import sys, termios, tty
+
+options = ["wrong", "right"]
+idx = 0
+
+def render():
+    for i, o in enumerate(options):
+        sys.stdout.write("%s %s\r\n" % ('>' if i == idx else ' ', o))
+    sys.stdout.flush()
+
+fd = sys.stdin.fileno()
+old = termios.tcgetattr(fd)
+tty.setraw(fd)
+render()
+try:
+    while True:
+        ch = sys.stdin.read(1)
+        if ch == '\x1b':
+            ch2 = sys.stdin.read(1)
+            if ch2 in ('[', 'O'):
+                ch3 = sys.stdin.read(1)
+                if ch3 == 'B':
+                    idx = (idx + 1) % len(options)
+                elif ch3 == 'A':
+                    idx = (idx - 1) % len(options)
+            render()
+        elif ch in ('\r', '\n'):
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+            sys.stdout.write("CONFIRMED:%s\r\n" % options[idx])
+            sys.stdout.flush()
+            break
+finally:
+    termios.tcsetattr(fd, termios.TCSADRAIN, old)
+PY
+chmod +x "$MENU_PY"
+
+MENU_WIN1="fm-smoke-menu1"
+MENU_TARGET1="$SESSION:$MENU_WIN1"
+tmux new-window -d -t "$SESSION:" -n "$MENU_WIN1" -- bash -c "python3 '$MENU_PY'; sleep 5" \
+  || fail "could not launch the ordered-key-delivery menu stub"
+wait_for_capture_text "$MENU_TARGET1" "> wrong" || fail "menu stub did not render its default-highlighted state"
+
+fm_backend_tmux_send_key "$MENU_TARGET1" Enter || fail "fm_backend_tmux_send_key Enter (bare) failed"
+wait_for_capture_text "$MENU_TARGET1" "CONFIRMED:" || fail "bare Enter did not confirm a choice"
+out=$(fm_backend_tmux_capture "$MENU_TARGET1" 20) || fail "fm_backend_tmux_capture failed after bare Enter"
+case "$out" in
+  *CONFIRMED:wrong*) : ;;
+  *) fail "bare Enter should confirm the default-highlighted (wrong) option, got:"$'\n'"$out" ;;
+esac
+fm_backend_tmux_kill "$MENU_TARGET1"
+pass "real tmux: fm_backend_tmux_send_key(Enter) alone confirms the default-highlighted option"
+
+MENU_WIN2="fm-smoke-menu2"
+MENU_TARGET2="$SESSION:$MENU_WIN2"
+tmux new-window -d -t "$SESSION:" -n "$MENU_WIN2" -- bash -c "python3 '$MENU_PY'; sleep 5" \
+  || fail "could not launch the second ordered-key-delivery menu stub"
+wait_for_capture_text "$MENU_TARGET2" "> wrong" || fail "second menu stub did not render its default-highlighted state"
+fm_backend_tmux_send_key "$MENU_TARGET2" Down || fail "fm_backend_tmux_send_key Down failed"
+wait_for_capture_text "$MENU_TARGET2" "> right" || fail "Down did not move the highlight to the second option"
+fm_backend_tmux_send_key "$MENU_TARGET2" Enter || fail "fm_backend_tmux_send_key Enter (after Down) failed"
+wait_for_capture_text "$MENU_TARGET2" "CONFIRMED:" || fail "Enter after Down did not confirm a choice"
+out=$(fm_backend_tmux_capture "$MENU_TARGET2" 20) || fail "fm_backend_tmux_capture failed after Down+Enter"
+case "$out" in
+  *CONFIRMED:right*) : ;;
+  *) fail "Down then Enter should confirm the second option, got:"$'\n'"$out" ;;
+esac
+fm_backend_tmux_kill "$MENU_TARGET2"
+pass "real tmux: fm_backend_tmux_send_key(Down) then send_key(Enter) confirms the second option, distinguishing it from bare Enter"
 
 cleanup_all
 trap - EXIT

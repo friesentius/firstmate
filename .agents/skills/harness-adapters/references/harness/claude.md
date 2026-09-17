@@ -14,7 +14,8 @@ Busy hooks verified 2026-07-28 on Claude Code 2.1.220.
 | Effort | `--effort <low\|medium\|high\|xhigh\|max>`, verified on 2.1.196. |
 
 Fresh-worktree or first-machine launch may show trust or bypass-permissions confirmation.
-Inspect within about 20 seconds, accept the required choice with `FM_HOME=<active-home> ../../../bin/fm-send.sh <window> --key Enter` unless already bound, and verify instructions started.
+Inspect within about 20 seconds; the trust dialog defaults its highlight to "No, exit", so a plain `Enter` there exits the worker instead of accepting, verified 2026-09-16 on 2.1.273 (`../../../docs/verification/runtime-backends.md` under "Claude trust dialog key sequence").
+Accept it with `FM_HOME=<active-home> ../../../bin/fm-send.sh <window> --key Down` then `FM_HOME=<active-home> ../../../bin/fm-send.sh <window> --key Enter` to select "Yes, I trust this folder" unless already bound, and verify instructions started.
 
 Claude Code adds a `Co-Authored-By` commit trailer by default, so the settings `../../../bin/fm-spawn.sh` generates suppress it, and `../../../docs/verification/runtime-backends.md` under "Commit attribution" owns the verified key semantics.
 
