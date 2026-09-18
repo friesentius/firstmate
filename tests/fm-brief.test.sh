@@ -753,6 +753,50 @@ test_scout_and_secondmate_load_decision_hold_policy() {
   pass "fm-brief.sh: investigation and visual-review completions load the shared decision policy"
 }
 
+test_escalation_forbids_inter_agent_messaging() {
+  local home brief
+  home="$TMP_ROOT/no-agent-messaging-home"
+  mkdir -p "$home/data"
+
+  FM_HOME="$home" FM_SECONDMATE_CHARTER='x' "$ROOT/bin/fm-brief.sh" no-agent-secondmate --secondmate --no-projects >/dev/null 2>&1
+  brief="$home/data/no-agent-secondmate/brief.md"
+  assert_grep "This status file and your instruction inbox are your only channels to the main firstmate or the" "$brief" \
+    "secondmate charter did not restrict escalation to the status file and inbox"
+  assert_grep "captain - never use any inter-agent messaging, session-addressing, or agent-discovery capability" "$brief" \
+    "secondmate charter did not forbid inter-agent messaging for escalation"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep 'your runtime happens to expose (for example a `SendMessage`/`Agent`/`ListAgents`-family tool)' "$brief" \
+    "secondmate charter did not name the SendMessage/Agent/ListAgents tool family as forbidden"
+  assert_grep "to reach another session, regardless of harness." "$brief" \
+    "secondmate charter did not forbid reaching another session regardless of harness"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" no-agent-scout firstmate --scout >/dev/null 2>&1
+  brief="$home/data/no-agent-scout/brief.md"
+  assert_grep "This status file and your instruction inbox are your only channels to firstmate or the captain -" "$brief" \
+    "scout brief did not restrict escalation to the status file and inbox"
+  assert_grep "never use any inter-agent messaging, session-addressing, or agent-discovery capability your" "$brief" \
+    "scout brief did not forbid inter-agent messaging for escalation"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep 'runtime happens to expose (for example a `SendMessage`/`Agent`/`ListAgents`-family tool) to' "$brief" \
+    "scout brief did not name the SendMessage/Agent/ListAgents tool family as forbidden"
+  assert_grep "reach another session, regardless of harness." "$brief" \
+    "scout brief did not forbid reaching another session regardless of harness"
+
+  FM_HOME="$home" "$ROOT/bin/fm-brief.sh" no-agent-ship firstmate --mode no-mistakes >/dev/null 2>&1
+  brief="$home/data/no-agent-ship/brief.md"
+  assert_grep "This status file and your instruction inbox are your only channels to firstmate or the captain -" "$brief" \
+    "ship brief did not restrict escalation to the status file and inbox"
+  assert_grep "never use any inter-agent messaging, session-addressing, or agent-discovery capability your" "$brief" \
+    "ship brief did not forbid inter-agent messaging for escalation"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep 'runtime happens to expose (for example a `SendMessage`/`Agent`/`ListAgents`-family tool) to' "$brief" \
+    "ship brief did not name the SendMessage/Agent/ListAgents tool family as forbidden"
+  assert_grep "reach another session, regardless of harness." "$brief" \
+    "ship brief did not forbid reaching another session regardless of harness"
+
+  pass "fm-brief.sh: escalation rule forbids inter-agent messaging in secondmate, scout, and ship briefs"
+}
+
 # Scout and secondmate paths still scaffold well-formed briefs.
 test_scout_and_secondmate_scaffold() {
   local brief
@@ -802,4 +846,5 @@ test_secondmate_marked_request_reporting_contract
 test_secondmate_directory_paths_are_absolute_and_output_is_stable
 test_pause_verb_override_renders_all_brief_scaffolds
 test_scout_and_secondmate_load_decision_hold_policy
+test_escalation_forbids_inter_agent_messaging
 test_scout_and_secondmate_scaffold
