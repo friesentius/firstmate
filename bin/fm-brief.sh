@@ -268,6 +268,10 @@ $INBOX_SECTION
 
 # Escalation to main firstmate
 Handle routine work yourself.
+This status file and your instruction inbox are your only channels to the main firstmate or the
+captain - never use any inter-agent messaging, session-addressing, or agent-discovery capability
+your runtime happens to expose (for example a \`SendMessage\`/\`Agent\`/\`ListAgents\`-family tool)
+to reach another session, regardless of harness.
 Report only true captain-relevant outcomes or a declared external wait by appending one line:
    \`echo "{state}: {one short line}" >> $STATUS_FILE\`
 States: working, needs-decision, blocked, $PAUSED_VERB, done, failed.
@@ -374,6 +378,10 @@ The report is the only thing that survives, so anything worth keeping must be in
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs to a human (product choices, destructive actions),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
+   This status file and your instruction inbox are your only channels to firstmate or the captain -
+   never use any inter-agent messaging, session-addressing, or agent-discovery capability your
+   runtime happens to expose (for example a \`SendMessage\`/\`Agent\`/\`ListAgents\`-family tool) to
+   reach another session, regardless of harness.
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
@@ -452,6 +460,10 @@ $RULE1
 5. If you hit the same obstacle twice, append \`blocked: {why}\` and stop; firstmate will help.
 6. If a decision belongs above the implementation worker (product choices, destructive actions, ask-user findings),
    append \`needs-decision: {summary of options}\` and stop. Firstmate will reply with the decision.
+   This status file and your instruction inbox are your only channels to firstmate or the captain -
+   never use any inter-agent messaging, session-addressing, or agent-discovery capability your
+   runtime happens to expose (for example a \`SendMessage\`/\`Agent\`/\`ListAgents\`-family tool) to
+   reach another session, regardless of harness.
    A decision or blocker you opened stays open until a \`resolved\` line carrying its exact key lands; a later \`done:\` or \`working:\` line never closes it, even when the answer is what started that work.
    Firstmate's reply normally writes that closing line at answer time; when a blocker or wait clears WITHOUT a firstmate reply, append \`resolved: {how it cleared}\` yourself (same \`[key=<slug>]\` if you opened it with one) as you resume.
 7. Never stop, restart, or update the shared \`no-mistakes\` daemon - it is one instance serving
