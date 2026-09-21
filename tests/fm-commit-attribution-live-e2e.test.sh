@@ -44,17 +44,16 @@
 # docs/verification/runtime-backends.md from its output.
 set -u
 
-if [ "${FM_COMMIT_ATTRIBUTION_LIVE_E2E:-0}" != 1 ]; then
-  echo "skip: set FM_COMMIT_ATTRIBUTION_LIVE_E2E=1 to drive the real claude binary"
-  exit 0
-fi
+# shellcheck source=tests/lib.sh
+. "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
+
+fm_live_gate opt-in FM_COMMIT_ATTRIBUTION_LIVE_E2E claude jq
 
 # shellcheck source=tests/fixtures.sh
 . "$(dirname "${BASH_SOURCE[0]}")/fixtures.sh"
 
 CLAUDE_BIN=${FM_CLAUDE_BIN:-$(command -v claude || true)}
 [ -n "$CLAUDE_BIN" ] || fail "claude is not installed; this guard cannot verify commit attribution"
-command -v jq >/dev/null 2>&1 || fail "jq not found"
 CLAUDE_VERSION=$("$CLAUDE_BIN" --version 2>&1 | head -1)
 
 TMP_ROOT=$(fm_test_tmproot fm-commit-attribution-live)
