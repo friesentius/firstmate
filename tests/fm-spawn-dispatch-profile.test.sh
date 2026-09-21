@@ -79,6 +79,18 @@ enable_dispatch_profile() {
 make_seeded_secondmate_home() {
   local home=$1 id=$2
   mkdir -p "$home/bin" "$home/data"
+  # A real secondmate home is always a standalone git clone
+  # (bin/fm-home-seed.sh's `git clone --quiet "$FM_ROOT" "$home"`), which is
+  # what bin/fm-git-hook-install.sh's commit-attribution backstop requires: a
+  # resolvable git-dir, core.bare not true, core.worktree not set. `git init`
+  # gives this fixture that same shape cheaply, without cloning the real repo.
+  git -C "$home" init -q
+  # A real clone also carries this repo's own .gitignore, which is what lets
+  # bin/fm-config-inherit-lib.sh's destination_allows_inherited_item() confirm
+  # config/ is gitignored before propagating an inheritable config file into a
+  # secondmate home; without it, inheritance would refuse in this fixture for
+  # a reason no real secondmate home ever hits.
+  cp "$ROOT/.gitignore" "$home/.gitignore"
   printf '# Firstmate\n' > "$home/AGENTS.md"
   printf '%s\n' "$id" > "$home/.fm-secondmate-home"
   printf 'charter for %s\n' "$id" > "$home/data/charter.md"
