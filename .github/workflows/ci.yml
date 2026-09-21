@@ -85,6 +85,9 @@ jobs:
     name: Commit attribution
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
+    # Hang tripwire: a lightweight checkout + script run, same cap as its
+    # sibling lightweight jobs (test-coverage, invariants).
+    timeout-minutes: 5
     steps:
       - uses: actions/checkout@v6
         with:
