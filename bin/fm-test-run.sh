@@ -1350,6 +1350,12 @@ families_for_changed_path() {
       printf '%s\n' real-herdr-gated
       printf '%s\n' backend-dispatch
       ;;
+    tests/fm-turnend-foreign-owner-repro.py)
+      # Shared repro helper for the foreign-owner turn-end race, selected by
+      # the same reference scan as the shared helpers below.
+      families_for_test_reference "$(basename "$path")" \
+        || printf '%s\n' "__unmapped__:$path"
+      ;;
     tests/*.test.sh)
       # A single test file change selects only that script via basename family
       # resolution in the caller; emit a marker family of __script__
@@ -1648,12 +1654,32 @@ families_for_changed_path() {
           || printf '%s\n' "__unmapped__:$path"
       fi
       ;;
+    tests/captures/*/*)
+      # A captured-input directory belongs to whichever suite reads it,
+      # found the same way as the tests/fixtures/*/* arm above, keyed on the
+      # directory rather than the file so adding a capture selects the same
+      # suite. A removed capture directory has no consuming suite left to
+      # select.
+      fixture_ref=${path#tests/captures/}
+      fixture_ref=${fixture_ref%%/*}
+      if [ -d "tests/captures/$fixture_ref" ]; then
+        families_for_test_reference "captures/$fixture_ref" \
+          || printf '%s\n' "__unmapped__:$path"
+      fi
+      ;;
     tests/lib.sh|tests/*-helpers.sh|tests/fixtures.sh|tests/*-fixture.sh)
       # Shared top-level test files, selected by the suites that name them.
       # Must stay below the tests/fixtures/*/* arm: a case glob's * spans /, so
       # tests/*-fixture.sh would otherwise swallow a nested
       # tests/fixtures/<dir>/<name>-fixture.sh and scan for its basename
       # instead of the fixture directory its readers actually name.
+      families_for_test_reference "$(basename "$path")" \
+        || printf '%s\n' "__unmapped__:$path"
+      ;;
+    tests/assets/*)
+      # A shared support file under tests/assets/, selected by whichever
+      # suite names its basename, the same reference-scan pattern as the
+      # tests/lib.sh arm above.
       families_for_test_reference "$(basename "$path")" \
         || printf '%s\n' "__unmapped__:$path"
       ;;
@@ -1669,7 +1695,7 @@ families_for_changed_path() {
     tests/*)
       printf '%s\n' "__unmapped__:$path"
       ;;
-    README.md|LICENSE|assets/*|docs/*|.gitignore)
+    README.md|LICENSE|GROK_BOT.md|assets/*|docs/*|.gitignore)
       ;;
     *)
       if [ -e "$path" ]; then

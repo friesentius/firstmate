@@ -3910,8 +3910,13 @@ if ! FM_HOOK_INSTALL_OUT=$("$FM_ROOT/bin/fm-git-hook-install.sh" "$WT" 2>&1); th
   printf '%s\n' "$FM_HOOK_INSTALL_OUT" >&2
   echo "warning: the no-agent-co-author rule is instruction-only for $ID; it is stated in the brief and recorded on the task record" >&2
 fi
-sync_commit_backstop_brief_note "$BRIEF" \
-  || echo "warning: could not bring the commit-attribution note in $BRIEF up to date for $ID" >&2
+if [ "$KIND" != secondmate ]; then
+  # $BRIEF is a secondmate's persistent charter, not a disposable per-task
+  # brief; AGENTS.md and secondmate-provisioning forbid Firstmate silently
+  # rewriting it, so this operational note is confined to ship/scout briefs.
+  sync_commit_backstop_brief_note "$BRIEF" \
+    || echo "warning: could not bring the commit-attribution note in $BRIEF up to date for $ID" >&2
+fi
 
 if [ "$KIND" != secondmate ]; then
   # Arm the semantic busy-state contract (bin/fm-busy-lib.sh) for every
