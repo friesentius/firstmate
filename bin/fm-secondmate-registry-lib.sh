@@ -103,6 +103,47 @@ secondmate_registry_field() {
   esac
 }
 
+# secondmate_registry_projects_contains <projects-csv> <project-name>: true
+# when <project-name> appears verbatim as one whitespace-trimmed
+# comma-separated item of <projects-csv> - the same split every other
+# projects: consumer already applies (bin/fm-fleet-snapshot.sh,
+# bin/fm-home-seed.sh's join_projects).
+secondmate_registry_projects_contains() {  # <projects-csv> <project-name>
+  local csv=$1 name=$2 item
+  [ -n "$name" ] || return 1
+  local IFS=,
+  for item in $csv; do
+    item=${item#"${item%%[![:space:]]*}"}
+    item=${item%"${item##*[![:space:]]}"}
+    [ "$item" = "$name" ] && return 0
+  done
+  return 1
+}
+
+# secondmate_registry_id_for_project <registry-file> <project-name>: the id of
+# the first registered secondmate (local or remote) whose projects: list names
+# <project-name> exactly (secondmate_registry_projects_contains). The
+# projects: list is non-exclusive provisioning data, not ownership (AGENTS.md
+# section 7), so more than one secondmate can name the same project; the
+# first registry line wins, matching secondmate_registry_line_for_id's own
+# first-match discipline for a duplicate id. Prints nothing and returns 1 when
+# the registry is missing/unsafe, malformed, the project name is empty, or no
+# entry names that project.
+secondmate_registry_id_for_project() {  # <registry-file> <project-name>
+  local reg=$1 name=$2 line
+  [ -n "$name" ] || return 1
+  [ -f "$reg" ] && [ ! -L "$reg" ] || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in "- "*) ;; *) continue ;; esac
+    secondmate_registry_parse_line "$line" || continue
+    if secondmate_registry_projects_contains "$SECONDMATE_REGISTRY_PROJECTS" "$name"; then
+      printf '%s\n' "$SECONDMATE_REGISTRY_ID"
+      return 0
+    fi
+  done < "$reg"
+  return 1
+}
+
 secondmate_registry_path_key() {
   local path=$1 parent base
   case "$path" in /*) ;; *) return 1 ;; esac
