@@ -1285,6 +1285,26 @@ ok - real herdr E2E: project beta's workspace and task were never affected by pr
 Portable regressions in `tests/fm-backend-herdr.test.sh` (config parsing, floor-warning wording, the persisted-record format, and a fake-CLI create/adopt/self-heal cycle) pin the same contract with no herdr binary required.
 The version-floor gate reuses `fm_backend_herdr_presentation_default_supported`/`fm_backend_herdr_presentation_floor_warn` unchanged except for a `project`-labeled wording branch: unlike the disposable per-task projection's `on` override, an explicit `project` choice has no floor bypass, so a below-floor home always falls back to the ordinary flat per-home layout with one warning.
 
+The secondmate-routed leg of the same topology (PR #7, commit `58f55802`: when a registered secondmate's `projects:` list already covers the project being spawned into, placement reuses that secondmate's own live home-labeled workspace instead of creating or reusing a separate `proj-<name>` workspace) has its own suite, which ran on 2026-09-23 against Herdr 0.9.1 protocol 22 in an isolated `fm-lab-` session, with the default session's workspace count checked before and after the run (4, unchanged):
+
+```sh
+HERDR_LAB_HELPER=bin/fm-herdr-lab.sh \
+  tests/fm-backend-herdr-project-secondmate-e2e.test.sh
+```
+
+Observed guarantees:
+
+```text
+ok - real herdr E2E: the secondmate's own home workspace is live before any routed placement is tested
+ok - real herdr E2E: cm1 (secondmate-covered project) spawns successfully
+ok - real herdr E2E: cm1 lands in the covering secondmate's OWN workspace, never a separate project workspace, and persists no project record
+ok - real herdr E2E: a second task for the same secondmate-covered project converges on the same secondmate workspace
+ok - real herdr E2E: a project with no covering secondmate keeps the ordinary project-workspace behavior, unchanged
+ok - real herdr E2E: tearing down the secondmate-routed cm1 uses only the primary's own overrides, closes only its own tab, and leaves the secondmate's own tab and shared workspace untouched
+```
+
+The suite's own floor check classified Herdr 0.9.1 protocol 22 as at or above the 0.8.0 project-grouping floor, so this run exercised the unconditional secondmate-routed path; the secondmate-routed leg has no floor of its own (it reuses an already-live workspace exactly like the per-home lookup's unconditional label search), so it is asserted to behave identically on every release, and the suite also covers the below-floor case directly when run on a release below 0.8.0.
+
 ### Workspace-removal focus safety
 
 The focus-flash regression ran on 2026-08-05 against both Herdr 0.7.5 protocol 17 and Herdr 0.8.0 protocol 19 on macOS aarch64, with the 0.7.5 run using the pinned upstream release binary first on `PATH`:
