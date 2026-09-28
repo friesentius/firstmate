@@ -1,0 +1,12 @@
+== BASE(dc9f3c7): target in real-herdr-gated family:
+(absent)
+== BASE check-coverage
+comm: file 2 is not in sorted order
+comm: input is not in sorted order
+exit=1
+-- BASE portable-parallel-1
+(absent)
+-- BASE portable-parallel-2
+(absent)
+-- BASE portable-serial
+tests/fm-backend-herdr-project-secondmate-e2e.test.sh

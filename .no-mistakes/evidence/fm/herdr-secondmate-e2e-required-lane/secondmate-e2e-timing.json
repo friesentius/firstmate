@@ -1,0 +1,31 @@
+{
+  "families": [
+    {
+      "count": 1,
+      "duration_ms": 43459,
+      "failed": 0,
+      "name": "real-herdr-gated"
+    }
+  ],
+  "finished_at": "2026-09-28T19:30:53Z",
+  "run_id": "fm-test-run-1790623809730-3603114",
+  "scripts": [
+    {
+      "duration_ms": 43459,
+      "exit": 0,
+      "expected_gate_skip": "herdr",
+      "family": "real-herdr-gated",
+      "gate_skip": false,
+      "gate_skip_reason": "",
+      "path": "tests/fm-backend-herdr-project-secondmate-e2e.test.sh"
+    }
+  ],
+  "selection": "scripts;fail-on-gate-skip=herdr not found;jobs=1",
+  "started_at": "2026-09-28T19:30:09Z",
+  "summary": {
+    "duration_ms": 43611,
+    "failed": 0,
+    "skipped_gate": 0,
+    "total": 1
+  }
+}

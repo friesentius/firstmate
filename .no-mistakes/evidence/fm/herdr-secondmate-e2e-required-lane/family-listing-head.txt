@@ -1,0 +1,35 @@
+== HEAD: --list --family real-herdr-gated
+tests/fm-afk-inject-herdr-e2e.test.sh
+tests/fm-afk-launch.test.sh
+tests/fm-backend-autodetect-smoke.test.sh
+tests/fm-backend-herdr-agent-exit-shell-e2e.test.sh
+tests/fm-backend-herdr-eventwait-smoke.test.sh
+tests/fm-backend-herdr-focus-flash-e2e.test.sh
+tests/fm-backend-herdr-launcher-workspace-e2e.test.sh
+tests/fm-backend-herdr-presentation-e2e.test.sh
+tests/fm-backend-herdr-project-secondmate-e2e.test.sh
+tests/fm-backend-herdr-project-workspace-e2e.test.sh
+tests/fm-backend-herdr-prune-safety-e2e.test.sh
+tests/fm-backend-herdr-respawn-idem-e2e.test.sh
+tests/fm-backend-herdr-smoke.test.sh
+tests/fm-backend-herdr-stale-active-tab-e2e.test.sh
+tests/fm-backend-herdr-workspace-per-home-e2e.test.sh
+tests/fm-control-herdr-smoke.test.sh
+tests/fm-herdr-attached-viewer-live-e2e.test.sh
+tests/fm-herdr-session-cleanup-e2e.test.sh
+
+== HEAD grep target in family:
+tests/fm-backend-herdr-project-secondmate-e2e.test.sh
+
+== HEAD: target in portable lanes (expect none):
+-- portable-parallel-1
+(absent)
+-- portable-parallel-2
+(absent)
+-- portable-serial
+(absent)
+
+== HEAD: --check-coverage
+comm: file 2 is not in sorted order
+comm: input is not in sorted order
+exit=1

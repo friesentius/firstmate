@@ -1,0 +1,9 @@
+## BASE dc9f3c7
+herdr family has it?
+0
+family of test:
+  in portable-serial
+## check-coverage
+comm: file 2 is not in sorted order
+comm: input is not in sorted order
+exit=1

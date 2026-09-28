@@ -1,0 +1,12 @@
+## target: --list --family real-herdr-gated | grep secondmate
+9:tests/fm-backend-herdr-project-secondmate-e2e.test.sh
+## total in family: 18
+## portable lanes containing it (expect none):
+(end)
+## locale: en_US.UTF-8
+## --check-coverage (host locale)
+FM_TEST_COVERAGE ok total=222 parallel=24 parallel_max_ms=417163 parallel_imbalance_ms=2894 parallel_unhinted=0 serial=180 serial_shards=9 serial_unhinted=4 herdr=18
+exit=0
+## --check-coverage LC_ALL=en_US.UTF-8
+FM_TEST_COVERAGE ok total=222 parallel=24 parallel_max_ms=417163 parallel_imbalance_ms=2894 parallel_unhinted=0 serial=180 serial_shards=9 serial_unhinted=4 herdr=18
+exit=0

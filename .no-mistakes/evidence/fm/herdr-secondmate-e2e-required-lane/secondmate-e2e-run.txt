@@ -1,0 +1,12 @@
+FM_TEST_BEGIN 2026-09-28T19:30:09Z tests/fm-backend-herdr-project-secondmate-e2e.test.sh family=real-herdr-gated expected_gate_skip=herdr
+ok - real herdr E2E: the secondmate's own home workspace is live before any routed placement is tested
+ok - real herdr E2E: cm1 (secondmate-covered project) spawns successfully
+ok - real herdr E2E: cm1 lands in the covering secondmate's OWN workspace, never a separate project workspace, and persists no project record
+ok - real herdr E2E: a second task for the same secondmate-covered project converges on the same secondmate workspace
+ok - real herdr E2E: a project with no covering secondmate keeps the ordinary project-workspace behavior, unchanged
+ok - real herdr E2E: tearing down the secondmate-routed cm1 uses only the primary's own overrides, closes only its own tab, and leaves the secondmate's own tab and shared workspace untouched
+FM_TEST_END 2026-09-28T19:30:53Z tests/fm-backend-herdr-project-secondmate-e2e.test.sh exit=0 duration_ms=43459 gate_skip=false
+FM_TEST_SUMMARY total=1 failed=0 skipped_gate=0 duration_ms=43611
+FM_TEST_SUMMARY_FAMILY family=real-herdr-gated count=1 duration_ms=43459 failed=0
+FM_TEST_SLOWEST rank=1 script=tests/fm-backend-herdr-project-secondmate-e2e.test.sh duration_ms=43459
+fm-test-run: wrote timing artifact: /home/friesent/.no-mistakes/evidence/01M3MQS40AZQWRPKH7G8D0KC2P/secondmate-e2e-timing.json
