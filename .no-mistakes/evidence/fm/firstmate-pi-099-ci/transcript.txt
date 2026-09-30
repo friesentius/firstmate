@@ -1,0 +1,18 @@
+# fm-pi-branch-extension.test.sh
+## branch-base-0.99.1
+not ok - Pi outcomes rendering consumers must preserve stock behavior: file:///tmp/fm-pi-branch-extension.SZl4pV/stock-render-consumers/[eval1]:71
+  throw new Error("Calm-off ToolExecutionComponent rendering differs from Pi stock");
+Error: Calm-off ToolExecutionComponent rendering differs from Pi stock
+## branch-0.99.1
+ok - fm_branch_outcomes hides through ToolExecutionComponent while Calm-off and HTML export stay stock
+## branch-0.87.1
+ok - fm_branch_outcomes hides through ToolExecutionComponent while Calm-off and HTML export stay stock
+
+# Export boundary assertion vs real pi --export DOM
+base assertion, Pi 0.99.1: rc=1
+HEAD assertion, Pi 0.99.1: rc=0
+base assertion, Pi 0.87.1: rc=0
+HEAD assertion, Pi 0.87.1: rc=0
+HEAD assertion, adversarial adv-visible: rc=1 (expect 1)
+HEAD assertion, adversarial adv-showhidden: rc=1 (expect 1)
+HEAD assertion, adversarial adv-nocss: rc=1 (expect 1)
