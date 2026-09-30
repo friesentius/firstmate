@@ -17,7 +17,7 @@ Pi 0.81.1 was installed when Calm was first built, and Pi 0.82.0 was the later r
 The inspected Pi CHANGELOG shows no relevant presentation API introduced at either version, so those versions remain verification evidence rather than compatibility bounds.
 The exported classes used by the adapters (`AssistantMessageComponent` and `InteractiveMode`) are undocumented internals with no stated version guarantee.
 `tests/fm-calm-pi-extension.test.sh` records the installed Pi version as evidence without gating on it and covers both newer synthetic versions and an unavailable adapter seam.
-This host tracks Pi latest, so the version the evidence is pinned to moves; the [2026-09-30 record](#2026-09-30-pi-0991-export-conversation-boundary-repair) owns the currently pinned version and the renderer comparison behind it, and CI now installs that same pinned version explicitly (`.github/workflows/ci.yml`).
+This host tracks Pi latest, so the version the evidence is pinned to moves; the [2026-09-30 record](#2026-09-30-pi-0991-hidden-custom-message-export-rendering) owns the currently pinned version and the renderer comparison behind it, and CI now installs that same pinned version explicitly (`.github/workflows/ci.yml`).
 
 ### Built-in tool override constraints
 
@@ -745,29 +745,13 @@ The flag-off session's settled screen, with the preference `on` on disk, drew Cl
 ✻ Sautéed for 8s · done 11:07 AM
 ```
 
-## 2026-09-30 Pi 0.99.1 export conversation-boundary repair
+## 2026-09-30 Pi 0.99.1 hidden custom-message export rendering
 
-Pi 0.99.1's exported HTML client script stopped fully omitting a hidden (`display: false`) `custom_message` entry from the rendered `#messages` panel; it now renders the entry with a `hook-message-hidden` class and a page-level "Show hidden messages" toggle (`H` key), a legitimate transparency feature that reopens the Calm conversation boundary for exported HTML - a viewer could reveal Firstmate's operational/synthetic envelopes without ever needing terminal access.
+Pi 0.99.1's exported HTML client script stopped fully omitting a hidden (`display: false`) `custom_message` entry from the rendered `#messages` panel; it now renders the entry with a `hook-message-hidden` class that its own stylesheet hides (`body:not(.show-hidden-messages) .hook-message-hidden { display: none; }`) until the viewer uses the page-level "Show hidden messages" toggle (`H` key).
 Diffing `dist/core/export-html/template.js` between the last-known-good 0.87.1 and 0.99.1 isolated global installs localized the change to the `custom_message` branch of its entry-to-HTML function: `if (entry.type === 'custom_message' && entry.display)` (full omission) became `if (entry.type === 'custom_message') { const hidden = entry.display === false; ... }` (always rendered, hidden by class).
 
-This host has no `tmux`, so `tests/fm-calm-pi-extension.test.sh`'s `test_interactive_terminal_e2e` (which exercises `/export` inside a real tmux-driven Pi session) could not run here; both its failing DOM assertion and its `pi`/`tmux`-gated skip were confirmed exactly as the CI failure reported (`skip: pi or tmux not found for Pi calm interactive E2E` when `tmux` is absent).
-The fix and its correctness were instead verified with the real `@earendil-works/pi-coding-agent` 0.99.1 export pipeline and a real headless Chromium, standing in for the tmux session:
-
-1. `pi --export <session.jsonl> <out.html>` (Pi's own CLI export path, the same `exportFromFile` the interactive `/export` command calls) built a real exported HTML from a session file constructed through the real `SessionManager.appendMessage`/`appendCustomMessageEntry` API, holding a user message, an assistant message, and a `firstmate-synthetic-input` custom message with `display: false`.
-2. `.pi/extensions/fm-calm.ts`'s new `redactCalmExportBoundary` appends one small inline `<script>` after Pi's own bundled script (script tags execute in document order); it decodes the embedded `#session-data` JSON, collects the ids of every `display: false` custom_message entry, and removes the matching `#messages` descendants (`id="entry-${entry.id}"`, a DOM convention unchanged between 0.87.1 and 0.99.1), with a `MutationObserver` keeping the guarantee across later in-page tree navigation. That exact script was appended to a copy of the real export.
-3. `chromium --headless --disable-gpu --dump-dom` rendered both the unpatched and patched export, matching what `render_export_dom` in the test does.
-
-```text
-unpatched #messages: includes("[firstmate-synthetic-input]") = true   (the leak the CI failure reported)
-patched   #messages: includes("[firstmate-synthetic-input]") = false
-patched   #tree-container: includes("firstmate-synthetic-input") = true   (unaffected, as required)
-patched   #messages: user-message "Show a deterministic tool example." present = true
-patched   #messages: assistant-message "The deterministic tool example is complete." present = true
-```
-
-The same patched-script comparison against a real Pi 0.87.1 export (where the entry was already fully omitted) found no `#messages` node to remove, confirming the redaction is a no-op on the older, already-correct behavior.
-Chromium reported no console errors or exceptions loading the patched file.
-This is standalone evidence for the redaction mechanism, not a substitute for `test_interactive_terminal_e2e` itself; the next CI run against the pinned Pi 0.99.1 package (`.github/workflows/ci.yml`) is the authoritative confirmation for the full tmux-driven path, including `/share`, which `redactCalmExportBoundary` does not cover (see the comment above it in `fm-calm.ts`).
+Firstmate does not rewrite exports: hidden custom messages were always part of the exported session data, and Pi's hidden-by-default rendering keeps them out of the default view, which is within the boundary [`calm.md`](calm.md) states.
+`tests/fm-calm-pi-extension.test.sh`'s rendered export DOM assertion therefore accepts either full omission (older Pi) or `hook-message-hidden` entries hidden by the export's own default stylesheet (Pi 0.99.x), and still fails when any custom message entry renders without that class, when the synthetic label appears outside a hidden entry, or when the page loads with hidden messages shown.
 
 The same Pi 0.99.1 upgrade also changed `dist/core/tools/render-utils.js`'s `formatToolCallWithArgs`, the stock `ToolExecutionComponent` call-header fallback, to fold collapsed and expanded tool args into the call line; the 0.87.1 fallback showed only the tool name.
 `.pi/extensions/fm-branch-supervision.ts`'s `fm_branch_outcomes` and `fm_branch_processed` renderers now probe the installed Pi's own stock fallback at runtime (`getStockCallIncludesArgs`, the same probing style `getStockOutcomesPreviewLines` already used) instead of assuming either shape, and reproduce whichever one the probe finds.

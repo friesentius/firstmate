@@ -2165,7 +2165,7 @@ Those absolute figures are specific to this host and Pi version; the guards asse
 ### 2026-09-30 Pi 0.99.1 stock outcomes-renderer compatibility
 
 `tests/fm-pi-branch-extension.test.sh` and `tests/fm-pi-primary-types.test.sh` passed against isolated 0.87.1 and 0.99.1 `@earendil-works/pi-coding-agent` installs (`FM_PI_PACKAGE_DIR`) after `fm_branch_outcomes`/`fm_branch_processed` started probing the installed Pi's own stock call-header fallback instead of assuming its shape; `.github/workflows/ci.yml` now installs the verified 0.99.1 explicitly rather than floating latest.
-[`calm-mode-feasibility.md`](../calm-mode-feasibility.md#2026-09-30-pi-0991-export-conversation-boundary-repair) owns the version-scoped renderer evidence and the export conversation-boundary repair from the same upgrade.
+[`calm-mode-feasibility.md`](../calm-mode-feasibility.md#2026-09-30-pi-0991-hidden-custom-message-export-rendering) owns the version-scoped renderer evidence and the hidden custom-message export rendering change from the same upgrade.
 
 ## Native Codex through Pi
 

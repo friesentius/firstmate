@@ -20,7 +20,6 @@
 // and docs/calm.md owns the user-facing behavior and non-retroactive first-toggle bound.
 import { randomUUID } from "node:crypto";
 import {
-  existsSync,
   mkdirSync,
   readFileSync,
   realpathSync,
@@ -119,105 +118,6 @@ function installCalmPresentationAdapter(name: string, install: () => void): void
     console.error(`Firstmate Calm: ${name} presentation adapter unavailable, skipping. ${reason}`);
   }
 }
-
-// Matches Pi's own interactive-mode getPathCommandArgument("/export") exactly, so a
-// quoted or bare export path is parsed the same way Pi itself parses it.
-const parseExportCommandPath = (input: string): string | undefined => {
-  const command = "/export";
-  if (input === command) return undefined;
-  if (!input.startsWith(`${command} `)) return undefined;
-  const argsString = input.slice(command.length + 1).trimStart();
-  if (!argsString) return undefined;
-  const firstChar = argsString[0];
-  if (firstChar === '"' || firstChar === "'") {
-    const closingQuoteIndex = argsString.indexOf(firstChar, 1);
-    return closingQuoteIndex < 0 ? undefined : argsString.slice(1, closingQuoteIndex);
-  }
-  const firstWhitespaceIndex = argsString.search(/\s/);
-  return firstWhitespaceIndex < 0 ? argsString : argsString.slice(0, firstWhitespaceIndex);
-};
-
-// Since Pi 0.99.1 the exported HTML's own client-side script keeps every custom_message
-// entry in the "messages" panel, including one Firstmate marked display: false, showing
-// it as CSS-hidden-but-present with a "Show hidden messages" toggle (H key) instead of
-// omitting it as older Pi did. That toggle is a legitimate Pi feature, but it reopens the
-// Calm conversation boundary for exported HTML: a viewer could reveal Firstmate's
-// operational/synthetic envelopes that were never meant to leave the terminal.
-// Firstmate keeps those entries in the exported session data on purpose (captured above,
-// verified by the "did not persist synthetic provenance" check) so it cannot special-case
-// Pi's inline renderer without depending on its exact source text, which is exactly the
-// kind of internal-implementation-byte dependency that broke this file's Calm-off
-// ToolExecutionComponent rendering in the same Pi upgrade. Instead this appends one small,
-// self-contained script that runs after Pi's own inline script (script tags execute in
-// document order) and removes any "#messages" descendant whose id matches a hidden
-// custom_message entry's id, keyed only off the stable entry-id DOM convention
-// (id="entry-${entry.id}") both the 0.87.1 and 0.99.1 templates already share. A
-// MutationObserver keeps that guarantee across later in-page tree navigation, which
-// rebuilds "#messages" from the same session data.
-const CALM_EXPORT_BOUNDARY_MARKER = "FM_CALM_EXPORT_BOUNDARY";
-const buildCalmExportBoundaryScript = (): string =>
-  [
-    `<script>`,
-    `// ${CALM_EXPORT_BOUNDARY_MARKER}: restore the Calm conversation boundary Pi's own`,
-    `// exporter no longer enforces for hidden custom messages (docs/calm.md).`,
-    `(function () {`,
-    `  try {`,
-    `    var dataEl = document.getElementById("session-data");`,
-    `    if (!dataEl) return;`,
-    `    var raw = JSON.parse(atob(dataEl.textContent.trim()));`,
-    `    var entries = (raw.session && raw.session.entries) || raw.entries || [];`,
-    `    var hiddenIds = [];`,
-    `    entries.forEach(function (entry) {`,
-    `      if (entry && entry.type === "custom_message" && entry.display === false) {`,
-    `        hiddenIds.push("entry-" + entry.id);`,
-    `      }`,
-    `    });`,
-    `    if (hiddenIds.length === 0) return;`,
-    `    function strip() {`,
-    `      var messages = document.getElementById("messages");`,
-    `      if (!messages) return;`,
-    `      hiddenIds.forEach(function (id) {`,
-    `        var node = document.getElementById(id);`,
-    `        if (node && messages.contains(node)) node.remove();`,
-    `      });`,
-    `    }`,
-    `    strip();`,
-    `    var messages = document.getElementById("messages");`,
-    `    if (messages) new MutationObserver(strip).observe(messages, { childList: true, subtree: true });`,
-    `  } catch (e) {`,
-    `    // Best-effort: a redaction failure must never block the export from rendering.`,
-    `  }`,
-    `})();`,
-    `</script>`,
-  ].join("\n");
-
-// Pi writes the export asynchronously; poll briefly rather than assume it has already
-// landed by the time the caller's setTimeout(0) repaint callback runs.
-const waitForExportFile = async (filePath: string, attempts = 40, delayMs = 50): Promise<boolean> => {
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    if (existsSync(filePath)) return true;
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs));
-  }
-  return existsSync(filePath);
-};
-
-const redactCalmExportBoundary = async (filePath: string): Promise<void> => {
-  if (!(await waitForExportFile(filePath))) return;
-  let html: string;
-  try {
-    html = readFileSync(filePath, "utf8");
-  } catch {
-    return;
-  }
-  if (!html.includes('id="messages"') || html.includes(CALM_EXPORT_BOUNDARY_MARKER) || !html.includes("</body>")) {
-    return;
-  }
-  try {
-    writeFileSync(filePath, html.replace("</body>", `${buildCalmExportBoundaryScript()}\n</body>`));
-  } catch {
-    // Best-effort: leave the export as Pi wrote it rather than fail the command.
-  }
-};
 
 export default function (pi: ExtensionAPI) {
   installCalmPresentationAdapter("collapsed-thinking", installCalmAssistantLayout);
@@ -535,15 +435,6 @@ export default function (pi: ExtensionAPI) {
         return undefined;
       }
 
-      // Only a bare "/export <path>" writes a local file we can redact; "/export" with
-      // no argument uses Pi's own default naming this extension does not replicate, and
-      // "/share" and a ".jsonl" target do not produce the HTML DOM the boundary applies to.
-      const exportPath = parseExportCommandPath(input);
-      // Matches Pi's own resolution: a relative path is written under this process's
-      // cwd (agent-session.js's exportSessionToHtml normalizes but never resolves a
-      // relative outputPath, so writeFileSync falls through to process.cwd()).
-      const htmlExportPath = exportPath && !exportPath.endsWith(".jsonl") ? resolve(process.cwd(), exportPath) : undefined;
-
       exportRendering = true;
       setCalmStockExportRendering(true);
       publishPresentationState();
@@ -562,7 +453,6 @@ export default function (pi: ExtensionAPI) {
         // need without appending anything to the transcript.
         repaintCalmToolRows();
         ctx.ui.setStatus("firstmate-calm", undefined);
-        if (htmlExportPath) void redactCalmExportBoundary(htmlExportPath);
       }, 0);
       return undefined;
     });
