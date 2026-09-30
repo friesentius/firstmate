@@ -2162,6 +2162,11 @@ The same guard against the pre-change extension in the same lab measured a 676.9
 Measured through the same real `fm_branch_report` tool and real `bin/` scripts with a 1 ms interval timer, the largest single block of the JavaScript thread fell from 273 ms to 2.0 ms for a routine outcome, from 286 ms to 2.0 ms for a captain outcome, and from 134 ms to 1.9 ms for main's acknowledgement, against a 1.3-2.2 ms idle-loop floor.
 Those absolute figures are specific to this host and Pi version; the guards assert the relationship (delivery must stay in the class of the same machine's own floor) rather than a remembered millisecond number.
 
+### 2026-09-30 Pi 0.99.1 stock outcomes-renderer compatibility
+
+`tests/fm-pi-branch-extension.test.sh` and `tests/fm-pi-primary-types.test.sh` passed against isolated 0.87.1 and 0.99.1 `@earendil-works/pi-coding-agent` installs (`FM_PI_PACKAGE_DIR`) after `fm_branch_outcomes`/`fm_branch_processed` started probing the installed Pi's own stock call-header fallback instead of assuming its shape; `.github/workflows/ci.yml` now installs the verified 0.99.1 explicitly rather than floating latest.
+[`calm-mode-feasibility.md`](../calm-mode-feasibility.md#2026-09-30-pi-0991-export-conversation-boundary-repair) owns the version-scoped renderer evidence and the export conversation-boundary repair from the same upgrade.
+
 ## Native Codex through Pi
 
 Verified on 2026-09-08 with Pi 0.85.1 and the installed `pi-codex-native` 0.2.1 adapter.
