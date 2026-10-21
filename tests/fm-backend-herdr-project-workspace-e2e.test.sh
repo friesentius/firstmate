@@ -83,6 +83,8 @@ cleanup_all() {
   [ -n "$WT4" ] && command -v treehouse >/dev/null 2>&1 && treehouse return --force "$WT4" >/dev/null 2>&1
   [ -n "$WT5" ] && command -v treehouse >/dev/null 2>&1 && treehouse return --force "$WT5" >/dev/null 2>&1
   herdr_safe_stop_and_delete "$SESSION"
+  # Spawn leaves each state/<id>.git-hooks strip dir read-only.
+  find "$TMP_ROOT" -type d -exec chmod u+rwx {} + 2>/dev/null || true
   rm -rf "$TMP_ROOT"
 }
 trap cleanup_all EXIT

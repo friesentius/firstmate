@@ -152,7 +152,8 @@
 #   canonical socket, outside any home's state/) through launch handoff.
 #   On contention a create makes one bounded attempt and falls back to the
 #   ordinary flat layout before any projection mutation. A resume refuses by
-#   default on the same contention (it does not degrade flat; a concurrent
+#   default on contention after a longer bound sized to a concurrent
+#   recovery's critical section (it does not degrade flat; a concurrent
 #   resume is a hard failure). Pass --herdr-resume-lock-wait to opt that
 #   resume into waiting for the lock instead, so two concurrent recoveries
 #   can serialize and each still replace its own exact husk. The flag acts
@@ -1702,18 +1703,25 @@ trap spawn_abort_cleanup EXIT
 # is required so secondmate and primary spawns serialize against the same
 # session without writing any other home's state directory.
 #
-# Default mode is one BOUNDED attempt. A clean create uses that default and
-# falls back to the ordinary flat layout on contention. An exact resume also
-# defaults to the bounded attempt and hard-refuses on contention (it does not
-# degrade flat). Passing mode `wait` makes this call WAIT for the lock instead
-# (`fm_lock_acquire_wait`, the same unbounded-wait idiom this file already uses
-# for its other fleet-shared locks). Only the recovery path under the explicit
-# --herdr-resume-lock-wait opt-in passes `wait`, so unbounded blocking on a
-# third-party session lock never becomes the default for every caller.
+# Default mode is one BOUNDED attempt (~5s) sized for the create path, where
+# contention falls back to the ordinary flat layout and a short bound just
+# keeps that fallback snappy. Mode `resume` is also a BOUNDED attempt, but
+# sized to the exact-resume critical section a concurrent recovery actually
+# holds the lock for (full herdr tab/pane creation plus projection and journal
+# publication under load measured up to ~17.5s; FM_HERDR_RESUME_LOCK_BOUND_SECONDS
+# overrides the default 90s margin, e.g. for a test that wants to exercise the
+# refusal path without waiting out the full bound). Either bounded mode still
+# hard-refuses rather than degrading flat (an exact resume is never allowed to
+# silently relocate a task into the flat layout). Passing mode `wait` makes this
+# call WAIT for the lock instead (`fm_lock_acquire_wait`, the same unbounded-wait
+# idiom this file already uses for its other fleet-shared locks). Only the
+# recovery path under the explicit --herdr-resume-lock-wait opt-in passes
+# `wait`, so unbounded blocking on a third-party session lock never becomes the
+# default for every caller.
 # Dead-owner reclaim inside `fm_lock_try_acquire` still bounds a wait against a
 # holder that crashed mid-hold.
 spawn_herdr_presentation_order_lock_acquire() {
-  local session=${1:-} mode=${2:-} attempt lock_path
+  local session=${1:-} mode=${2:-} attempt lock_path attempt_limit
   [ -n "$session" ] || session=$(fm_backend_herdr_session)
   lock_path=$(fm_backend_herdr_presentation_session_lock_path "$session") || return 1
   HERDR_PRESENTATION_ORDER_LOCK="$lock_path"
@@ -1722,8 +1730,13 @@ spawn_herdr_presentation_order_lock_acquire() {
     HERDR_PRESENTATION_ORDER_LOCK_HELD=1
     return 0
   fi
+  if [ "$mode" = resume ]; then
+    attempt_limit=$(( ${FM_HERDR_RESUME_LOCK_BOUND_SECONDS:-90} * 10 ))
+  else
+    attempt_limit=50
+  fi
   attempt=0
-  while [ "$attempt" -lt 50 ]; do
+  while [ "$attempt" -lt "$attempt_limit" ]; do
     if fm_lock_try_acquire "$HERDR_PRESENTATION_ORDER_LOCK"; then
       HERDR_PRESENTATION_ORDER_LOCK_HELD=1
       return 0
@@ -4283,15 +4296,20 @@ else
           echo "error: herdr presentation recovery could not ensure its exact named session" >&2
           exit 1
         }
-        # Refuse-by-default on contention. Wait only when the caller opted in
-        # with --herdr-resume-lock-wait (see header).
+        # Refuse-by-default on contention, bounded to the exact-resume
+        # critical section rather than the shorter create-path bound (see
+        # spawn_herdr_presentation_order_lock_acquire's header): a legitimate
+        # concurrent recovery holding the lock through its own full launch
+        # handoff must not lose this race to an arbitrary short timeout. Wait
+        # unboundedly only when the caller opted in with
+        # --herdr-resume-lock-wait.
         if [ "$HERDR_RESUME_LOCK_WAIT" = 1 ]; then
           spawn_herdr_presentation_order_lock_acquire "$HERDR_SES" wait || {
             echo "error: herdr presentation recovery could not resolve its session lock" >&2
             exit 1
           }
         else
-          spawn_herdr_presentation_order_lock_acquire "$HERDR_SES" || {
+          spawn_herdr_presentation_order_lock_acquire "$HERDR_SES" resume || {
             echo "error: herdr presentation recovery could not acquire its session lock; refusing a concurrent resume" >&2
             exit 1
           }
