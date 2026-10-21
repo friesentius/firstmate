@@ -348,18 +348,24 @@ puts steps[index].fetch("timeout-minutes", "none")
 # The fork opt-out is opt-in: with neither variable set every job runs on both
 # events, FM_CI_SKIP_PUSH=1 empties only the push run, and FM_CI_SKIP_MACOS=1
 # removes only the macOS job. A "-" in the table means the variable is unset.
+# The commit-attribution job needs a PR base/head SHA pair, so it runs only on
+# pull_request and "all" on push means every other job.
 test_fork_skip_variables_are_opt_in() {
-  local all event skip_push skip_macos expected want actual
+  local all event_all event skip_push skip_macos expected want actual
   all=$(workflow_jobs) || fail "could not list ci.yml jobs"
   printf '%s\n' "$all" | grep -qx macos-stock-bash \
     || fail "the macOS job is missing from ci.yml, so the table below would prove nothing"
+  printf '%s\n' "$all" | grep -qx commit-attribution \
+    || fail "the commit-attribution job is missing from ci.yml, so the table below would prove nothing"
   while read -r event skip_push skip_macos expected; do
     [ "$skip_push" != - ] || skip_push=
     [ "$skip_macos" != - ] || skip_macos=
+    event_all=$all
+    [ "$event" != push ] || event_all=$(printf '%s\n' "$all" | grep -vx commit-attribution)
     case $expected in
-      all) want=$all ;;
+      all) want=$event_all ;;
       none) want= ;;
-      all-but-macos) want=$(printf '%s\n' "$all" | grep -vx macos-stock-bash) ;;
+      all-but-macos) want=$(printf '%s\n' "$event_all" | grep -vx macos-stock-bash) ;;
       *) fail "unknown expectation $expected" ;;
     esac
     actual=$(jobs_running_under "$event" "$skip_push" "$skip_macos") \

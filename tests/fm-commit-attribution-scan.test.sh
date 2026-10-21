@@ -337,17 +337,20 @@ test_upstream_sync_ref_excluding_every_commit_says_so() {
   pass "a range fully excluded as upstream-reachable names the exclusion"
 }
 
-# fm_cas_lint_repo <dir>: a fixture whose main carries a stub bin/fm-lint.sh
-# and the real scan script, so .no-mistakes.yaml's commands.lint can run in it
-# against a trusted base copy, plus a feature branch checked out on top.
+# fm_cas_lint_repo <dir>: a fixture whose main carries stubs for the checks
+# commands.lint runs before the scan (bin/fm-lint.sh and
+# tests/fm-pi-primary-types.test.sh) and the real scan script, so
+# .no-mistakes.yaml's commands.lint can run in it against a trusted base copy,
+# plus a feature branch checked out on top.
 fm_cas_lint_repo() {
   local dir=$1
   fm_cas_repo "$dir"
-  mkdir -p "$dir/bin"
+  mkdir -p "$dir/bin" "$dir/tests"
   printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/bin/fm-lint.sh"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/tests/fm-pi-primary-types.test.sh"
   cp "$SCAN" "$dir/bin/fm-commit-attribution-scan.sh"
   chmod +x "$dir/bin/fm-lint.sh" "$dir/bin/fm-commit-attribution-scan.sh"
-  git -C "$dir" add bin
+  git -C "$dir" add bin tests
   git -C "$dir" commit -q -m "add lint scripts"
   git -C "$dir" checkout -qb feature
 }
