@@ -1,0 +1,6 @@
+fm-control rc=0 secs=59 leftover_entries=3 readonly_dirs=0 last=ok - fm-control's arrival leaves fm-send's from-firstmate marking untouched
+fm-cursor-harness rc=0 secs=2 leftover_entries=3 readonly_dirs=0 last=ok - cursor transcript fold: a prior conversation is excluded so a relaunch folds its own turn
+fm-documentation-audiences rc=0 secs=2 leftover_entries=3 readonly_dirs=0 last=ok - local links resolve while dates, versions, commands, and incident prose remain semantically reviewed
+fm-gotmp rc=0 secs=1 leftover_entries=0 readonly_dirs=0 last=ok - fm-teardown skips gracefully when tasktmp= points to a nonexistent dir
+fm-stat-shadowing rc=0 secs=0 leftover_entries=0 readonly_dirs=0 last=ok - Darwin-only test: shadowing assertions require BSD /usr/bin/stat; skipping on Linux
+fm-tmux-submit-busy rc=0 secs=3 leftover_entries=3 readonly_dirs=0 last=ok - fm_pane_is_busy: Claude spinner is scoped, multi-frame, and backward-compatible
