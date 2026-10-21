@@ -89,6 +89,8 @@
 #                                                 that already knows the exact
 #                                                 PR base SHA (CI) gets exactly
 #                                                 that range.
+#   Either form drops commits reachable from FM_UPSTREAM_SYNC_REF when that
+#   is set and resolvable; see this script's header.
 #   fm-commit-attribution-scan.sh --help          print this usage
 set -u
 
