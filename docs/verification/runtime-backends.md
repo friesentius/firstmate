@@ -1582,11 +1582,29 @@ ok - real Herdr lab validation completed on Herdr 0.8.0 with the default-session
 ```
 
 The projected spawn in that run used the historical empty opt-in file, so a home that had already enabled the projection keeps it without any migration step.
-One concurrent cross-home recovery case refused under contention on a loaded machine and passed on an immediate rerun; recovery-path presentation lock contention remains a deliberate hard refusal by default rather than a flat fallback, which default-on makes reachable from any Herdr home.
-Callers that need concurrent recoveries to serialize can pass `fm-spawn.sh --herdr-resume-lock-wait`.
+One concurrent cross-home recovery case refused under contention on a loaded machine running the prior ~5s default bound (bead fm-herdr-recovery-lock-margin; see below for the re-measured margin); recovery-path presentation lock contention remains a deliberate hard refusal by default rather than a flat fallback, which default-on makes reachable from any Herdr home, but the default bound is now sized to the exact-resume critical section rather than the shorter create-path bound.
+Callers that need concurrent recoveries to serialize past even that bound can pass `fm-spawn.sh --herdr-resume-lock-wait`.
 The flag applies to a fresh ship or scout spawn, and the multi-task path forwards it to each per-pair spawn.
 It has no effect on `--relaunch` and `--secondmate`, because those paths take no exact-resume presentation-order lock.
 That run measured the default-on projection on Herdr 0.8.0 only, while the focus-flash regression below was last run on 0.7.5 before the flip, so neither run covered a defective release under default-on projection; the version floor and the focus-flash suite's Part C close that gap.
+
+The concurrent-recovery margin fix (bead fm-herdr-recovery-lock-margin) was verified on 2026-10-21 against Herdr 0.9.5 with three consecutive full-suite passes on a host under real concurrent fleet load (the same load that reproduced the original flake: a sibling run's instrumented timing measured one exact-resume critical section held for 17.48s against the prior ~5s bound):
+
+```sh
+HERDR_LAB_HELPER=bin/fm-herdr-lab.sh \
+  tests/fm-backend-herdr-presentation-e2e.test.sh
+```
+
+All three runs reported, with zero failures each time:
+
+```text
+ok - real Herdr lab: concurrent cross-home recoveries replace exact husks under one session lock with no focus drift
+ok - real Herdr lab: default resumed identity refuses session lock contention
+ok - real Herdr lab: --herdr-resume-lock-wait waits out session lock contention instead of refusing
+ok - real Herdr lab validation completed on Herdr 0.9.5 with the default-session tripwire intact
+```
+
+The lock-refuse case now runs its default-mode resume with `FM_HERDR_RESUME_LOCK_BOUND_SECONDS=2` (see `tests/fm-backend-herdr-presentation-e2e.test.sh`'s `LOCK_REFUSE_ID` case) so its 15s artificial hold still deterministically exceeds the bound being exercised, independent of the new 90s production default.
 
 The restored-shell session-start cleanup ran on 2026-07-24 against Herdr 0.7.5 protocol 17:
 

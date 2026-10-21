@@ -24,6 +24,8 @@ export HERDR_LAB_HELPER HERDR_LAB_SESSION HERDR_ORIGINAL_PATH
 cleanup() {
   local status=$?
   env PATH="$HERDR_ORIGINAL_PATH" "$HERDR_LAB_HELPER" teardown "$HERDR_LAB_SESSION" || status=1
+  # Spawn leaves each state/<id>.git-hooks strip dir read-only.
+  find "$TMP_ROOT" -type d -exec chmod u+rwx {} + 2>/dev/null || true
   rm -rf "$TMP_ROOT"
   exit "$status"
 }

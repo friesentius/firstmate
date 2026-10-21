@@ -1396,7 +1396,10 @@ while [ ! -e "$LOCK_REFUSE_READY" ] && kill -0 "$LOCK_REFUSE_HOLDER_PID" 2>/dev/
 [ -e "$LOCK_REFUSE_READY" ] || fail "could not hold the session presentation lock for resume lock-refuse"
 
 LOCK_REFUSE_FOCUS=$(focus_snapshot)
-if spawn_task "$LOCK_REFUSE_ID" "$HOME_DIR" "$RECOVERY_PROJECT_DIR" \
+# The default bound is sized to a real recovery's own critical section (tens of
+# seconds), not to this fixture's artificial 15s hold, so shrink it here to
+# keep the refusal deterministic without slowing this test down to match it.
+if FM_HERDR_RESUME_LOCK_BOUND_SECONDS=2 spawn_task "$LOCK_REFUSE_ID" "$HOME_DIR" "$RECOVERY_PROJECT_DIR" \
     > "$TMP_ROOT/lock-refuse-resume.out" 2> "$TMP_ROOT/lock-refuse-resume.err"; then
   LOCK_REFUSE_STATUS=0
 else

@@ -33,6 +33,8 @@ TMP_ROOT=
 
 cleanup() {
   if [ -n "${TMP_ROOT:-}" ]; then
+    # Spawn leaves each state/<id>.git-hooks strip dir read-only.
+    find "$TMP_ROOT" -type d -exec chmod u+rwx {} + 2>/dev/null || true
     rm -rf "$TMP_ROOT"
   fi
 }
