@@ -1,0 +1,8 @@
+### control: prepare WITHOUT the 'chmod u+w "$hooks_dir"' line (pre-review-fix), then teardown
+prepare exit=0
+dr-x------ /tmp/nm-gate.8Q7K6o/gate.git/worktrees/RUND/fm-no-coauthor-hooks
+error: failed to delete 'worktrees/RUND': Permission denied
+remove exit=255
+error: failed to delete 'worktrees/RUND': Permission denied
+prune exit=0
+RUND

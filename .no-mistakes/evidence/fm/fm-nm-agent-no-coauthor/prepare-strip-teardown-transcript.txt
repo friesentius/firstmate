@@ -1,0 +1,50 @@
+### git version 2.55.0; disposable gate mirror laid out like ~/.no-mistakes/repos/<id>.git: extensions.worktreeConfig=true, core.bare+core.hookspath in main config.worktree, run worktrees RUNA RUNB RUNC each with per-worktree core.hookspath=<gate>/hooks
+### prepare block (extracted verbatim from .no-mistakes.yaml commands.prepare):
+set -e
+hooks_dir="$(git rev-parse --path-format=absolute --git-dir)/fm-no-coauthor-hooks"
+wt="$(git rev-parse --path-format=absolute --show-toplevel)"
+bin/fm-git-strip-ai-trailers.sh install "$hooks_dir" "$wt"
+chmod u+w "$hooks_dir"
+git config --worktree core.hooksPath "$hooks_dir"
+
+### S1: run prepare concurrently in RUNA and RUNB (RUNC left unprepared as control)
+RUNB prepare exit=0
+RUNA prepare exit=0
+-- RUNA effective core.hooksPath:
+file:/tmp/nm-gate.8Q7K6o/gate.git/worktrees/RUNA/config.worktree	/tmp/nm-gate.8Q7K6o/gate.git/worktrees/RUNA/fm-no-coauthor-hooks
+-- RUNB effective core.hooksPath:
+file:/tmp/nm-gate.8Q7K6o/gate.git/worktrees/RUNB/config.worktree	/tmp/nm-gate.8Q7K6o/gate.git/worktrees/RUNB/fm-no-coauthor-hooks
+-- RUNC effective core.hooksPath:
+file:/tmp/nm-gate.8Q7K6o/gate.git/worktrees/RUNC/config.worktree	/tmp/nm-gate.8Q7K6o/gate.git/hooks
+-- shared gate config core.hookspath (expect unset):
+(unset)
+-- RUNA hooks dir perms:
+drwx------ /tmp/nm-gate.8Q7K6o/gate.git/worktrees/RUNA/fm-no-coauthor-hooks
+-r-x------ /tmp/nm-gate.8Q7K6o/gate.git/worktrees/RUNA/fm-no-coauthor-hooks/commit-msg
+### S2: agent-typed commit with AI trailer + human trailer in prepared RUNA
+commit exit=0
+-- committed message:
+fix: ci repair
+
+Body.
+
+Co-authored-by: Jane Human <jane@example.com>
+
+### S3: control - same AI-trailer commit in unprepared sibling RUNC
+-- committed message:
+ctl
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
+### S4: rerun prepare in RUNA, then commit again
+re-prepare exit=0
+again
+
+### S5: teardown like no-mistakes: git worktree remove --force each, then prune
+remove RUNA exit=0
+remove RUNB exit=0
+remove RUNC exit=0
+prune exit=0
+-- leftover worktree metadata:
+"/tmp/nm-gate.8Q7K6o/gate.git/worktrees": No such file or directory (os error 2)
+/tmp/nm-gate.8Q7K6o/gate.git (bare)
