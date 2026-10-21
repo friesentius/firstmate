@@ -203,6 +203,215 @@ test_help_prints_usage() {
   pass "--help prints usage and exits 0"
 }
 
+test_upstream_sync_ref_excludes_upstream_commit_but_still_scans_a_later_fork_commit() {
+  local tmp
+  tmp=$(fm_test_tmproot fm-cas-sync-fork-after)
+  fm_cas_repo "$tmp"
+  git -C "$tmp" checkout -qb upstream
+  printf 'up\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "upstream work"
+  local upstream_sha
+  upstream_sha=$(git -C "$tmp" rev-parse HEAD)
+  git -C "$tmp" checkout -q main
+  git -C "$tmp" merge -q --no-ff -m "Merge upstream" upstream
+  printf 'fork\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "$(printf 'fork change\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n')"
+  local fork_sha
+  fork_sha=$(git -C "$tmp" rev-parse --short HEAD)
+  local initial_sha
+  initial_sha=$(git -C "$tmp" rev-parse "main~2")
+
+  local rc=0 out
+  out=$(cd "$tmp" && FM_UPSTREAM_SYNC_REF="$upstream_sha" "$SCAN" "$initial_sha" main 2>&1) || rc=$?
+  expect_code 1 "$rc" "a fork commit after a merged upstream commit must still fail"
+  assert_contains "$out" "$fork_sha" "failure did not name the fork commit"
+  case "$out" in
+    *"$(git -C "$tmp" rev-parse --short "$upstream_sha")"*)
+      fail "the excluded upstream commit must not be named in the failure output"
+      ;;
+  esac
+  pass "FM_UPSTREAM_SYNC_REF excludes the upstream commit while a later fork commit with a trailer still fails"
+}
+
+test_upstream_sync_ref_excludes_a_trailer_already_carried_by_upstream() {
+  local tmp
+  tmp=$(fm_test_tmproot fm-cas-sync-upstream-trailer)
+  fm_cas_repo "$tmp"
+  git -C "$tmp" checkout -qb upstream
+  printf 'up\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "$(printf 'upstream agent commit\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n')"
+  local upstream_sha
+  upstream_sha=$(git -C "$tmp" rev-parse HEAD)
+  git -C "$tmp" checkout -q main
+  git -C "$tmp" merge -q --no-ff -m "Merge upstream" upstream
+  local initial_sha
+  initial_sha=$(git -C "$tmp" rev-parse "main~1")
+
+  local rc=0 out
+  out=$(cd "$tmp" && "$SCAN" "$initial_sha" main 2>&1) || rc=$?
+  expect_code 1 "$rc" "without the exclusion, the upstream commit's own trailer must still fail the scan"
+
+  rc=0
+  out=$(cd "$tmp" && FM_UPSTREAM_SYNC_REF="$upstream_sha" "$SCAN" "$initial_sha" main 2>&1) || rc=$?
+  expect_code 0 "$rc" "with the exclusion, a trailer already carried by the excluded upstream commit must pass"
+  assert_contains "$out" "no agent co-author trailers found in 1 commit(s) ($initial_sha..main, excluding commits reachable from upstream $upstream_sha)" \
+    "the exclusion did not report a clean result naming the exclusion"
+  pass "a legitimate upstream-reachable commit with a trailer is excluded only when FM_UPSTREAM_SYNC_REF names it"
+}
+
+test_upstream_sync_ref_still_scans_a_merged_side_branch_fork_commit() {
+  local tmp
+  tmp=$(fm_test_tmproot fm-cas-sync-side-branch)
+  fm_cas_repo "$tmp"
+  local initial_sha
+  initial_sha=$(git -C "$tmp" rev-parse HEAD)
+
+  git -C "$tmp" checkout -qb upstream
+  printf 'up\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "unrelated upstream work"
+  local upstream_sha
+  upstream_sha=$(git -C "$tmp" rev-parse HEAD)
+
+  git -C "$tmp" checkout -q main
+  git -C "$tmp" checkout -qb side
+  printf 'side\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "$(printf 'side-branch change\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n')"
+  local side_sha
+  side_sha=$(git -C "$tmp" rev-parse --short HEAD)
+  git -C "$tmp" checkout -q main
+  git -C "$tmp" merge -q --no-ff -m "Merge side branch" side
+
+  local rc=0 out
+  out=$(cd "$tmp" && FM_UPSTREAM_SYNC_REF="$upstream_sha" "$SCAN" "$initial_sha" main 2>&1) || rc=$?
+  expect_code 1 "$rc" "a fork commit landed on a merged side branch must still fail, not be skipped like --first-parent would"
+  assert_contains "$out" "$side_sha" "failure did not name the side-branch fork commit"
+  pass "FM_UPSTREAM_SYNC_REF does not hide a fork commit on a merged side branch (non-first-parent scan)"
+}
+
+test_upstream_sync_ref_unresolvable_warns_and_scans_full_range() {
+  local tmp
+  tmp=$(fm_test_tmproot fm-cas-sync-unresolvable)
+  fm_cas_repo "$tmp"
+  git -C "$tmp" checkout -qb feature
+  printf 'two\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "ordinary change"
+
+  local rc=0 out
+  out=$(cd "$tmp" && FM_UPSTREAM_SYNC_REF='no-such-upstream-ref' "$SCAN" main feature 2>&1) || rc=$?
+  expect_code 0 "$rc" "an unresolvable FM_UPSTREAM_SYNC_REF alone must not fail a clean range"
+  assert_contains "$out" "warning: FM_UPSTREAM_SYNC_REF=no-such-upstream-ref is not a resolvable commit" \
+    "an unresolvable ref did not print a clear warning"
+  assert_contains "$out" "no agent co-author trailers found in 1 commit(s) (main..feature)" \
+    "an unresolvable ref did not scan the full range"
+
+  git -C "$tmp" commit -q --allow-empty -m "$(printf 'bad commit\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n')"
+  rc=0
+  out=$(cd "$tmp" && FM_UPSTREAM_SYNC_REF='no-such-upstream-ref' "$SCAN" main feature 2>&1) || rc=$?
+  expect_code 1 "$rc" "an unresolvable FM_UPSTREAM_SYNC_REF must still fail on a trailer in the full range"
+  pass "FM_UPSTREAM_SYNC_REF set to an unresolvable ref warns and scans the full range"
+}
+
+test_upstream_sync_ref_excluding_every_commit_says_so() {
+  local tmp
+  tmp=$(fm_test_tmproot fm-cas-sync-all-excluded)
+  fm_cas_repo "$tmp"
+  local initial_sha
+  initial_sha=$(git -C "$tmp" rev-parse HEAD)
+  printf 'up\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "upstream work"
+  local upstream_sha
+  upstream_sha=$(git -C "$tmp" rev-parse HEAD)
+
+  local rc=0 out
+  out=$(cd "$tmp" && FM_UPSTREAM_SYNC_REF="$upstream_sha" "$SCAN" "$initial_sha" main 2>&1) || rc=$?
+  expect_code 0 "$rc" "a range fully excluded as upstream-reachable is a clean pass"
+  assert_contains "$out" "no commits in range $initial_sha..main, excluding commits reachable from upstream $upstream_sha" \
+    "a fully excluded range was not distinguishable from an empty one"
+  pass "a range fully excluded as upstream-reachable names the exclusion"
+}
+
+# fm_cas_lint_repo <dir>: a fixture whose main carries a stub bin/fm-lint.sh
+# and the real scan script, so .no-mistakes.yaml's commands.lint can run in it
+# against a trusted base copy, plus a feature branch checked out on top.
+fm_cas_lint_repo() {
+  local dir=$1
+  fm_cas_repo "$dir"
+  mkdir -p "$dir/bin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "$dir/bin/fm-lint.sh"
+  cp "$SCAN" "$dir/bin/fm-commit-attribution-scan.sh"
+  chmod +x "$dir/bin/fm-lint.sh" "$dir/bin/fm-commit-attribution-scan.sh"
+  git -C "$dir" add bin
+  git -C "$dir" commit -q -m "add lint scripts"
+  git -C "$dir" checkout -qb feature
+}
+
+# fm_cas_run_lint <dir> <upstream-url>: run the parsed commands.lint in <dir>
+# with the upstream fetch URL rewritten to <upstream-url>, so no test touches
+# the network.
+fm_cas_run_lint() {
+  local dir=$1 upstream_url=$2 lint
+  lint=$(ruby -ryaml -e 'puts YAML.load_file(ARGV[0])["commands"]["lint"]' "$ROOT/.no-mistakes.yaml") \
+    || fail "failed to parse commands.lint from .no-mistakes.yaml"
+  (cd "$dir" && GIT_CONFIG_COUNT=1 \
+    GIT_CONFIG_KEY_0="url.$upstream_url.insteadOf" \
+    GIT_CONFIG_VALUE_0="https://github.com/kunchenguid/firstmate.git" \
+    bash -c "$lint" 2>&1)
+}
+
+test_lint_upstream_fetch_failure_warns_and_scans_full_range() {
+  command -v ruby >/dev/null 2>&1 || fail "ruby is required to parse .no-mistakes.yaml"
+  local tmp
+  tmp=$(fm_test_tmproot fm-cas-lint-fetch-fail)
+  fm_cas_lint_repo "$tmp"
+  git -C "$tmp" commit -q --allow-empty -m "ordinary change"
+  git -C "$tmp" commit -q --allow-empty -m "second ordinary change"
+
+  local rc=0 out
+  out=$(fm_cas_run_lint "$tmp" "file://$tmp/no-such-upstream") || rc=$?
+  expect_code 0 "$rc" "an upstream fetch failure alone must not fail lint"
+  assert_contains "$out" "warning: could not fetch kunchenguid/firstmate main" \
+    "an upstream fetch failure did not print a clear warning"
+  assert_contains "$out" "no agent co-author trailers found in 2 commit(s)" \
+    "an upstream fetch failure did not scan every commit in the range"
+  assert_not_contains "$out" "excluding commits reachable from upstream" \
+    "an upstream fetch failure must not apply any exclusion"
+
+  git -C "$tmp" commit -q --allow-empty -m "$(printf 'bad commit\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n')"
+  rc=0
+  out=$(fm_cas_run_lint "$tmp" "file://$tmp/no-such-upstream") || rc=$?
+  expect_code 1 "$rc" "an upstream fetch failure must still fail lint on a trailer"
+  pass "commands.lint warns and scans the full range when the upstream fetch fails"
+}
+
+test_lint_upstream_fetch_success_applies_exclusion() {
+  command -v ruby >/dev/null 2>&1 || fail "ruby is required to parse .no-mistakes.yaml"
+  local tmp
+  tmp=$(fm_test_tmproot fm-cas-lint-fetch-ok)
+  fm_cas_lint_repo "$tmp"
+  git -C "$tmp" checkout -qb upstream-src main
+  git -C "$tmp" commit -q --allow-empty -m "$(printf 'upstream agent commit\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n')"
+  local upstream_sha
+  upstream_sha=$(git -C "$tmp" rev-parse HEAD)
+  git clone -q --bare "$tmp" "$tmp/upstream.git"
+  git -C "$tmp/upstream.git" update-ref refs/heads/main "$upstream_sha"
+  git -C "$tmp" checkout -q feature
+  git -C "$tmp" merge -q --no-ff -m "Merge upstream" upstream-src
+
+  local rc=0 out
+  out=$(fm_cas_run_lint "$tmp" "file://$tmp/upstream.git") || rc=$?
+  expect_code 0 "$rc" "a trailer carried only by the fetched upstream must not fail lint"
+  assert_contains "$out" "excluding commits reachable from upstream $upstream_sha" \
+    "lint did not apply the fetched upstream exclusion"
+  pass "commands.lint excludes the fetched upstream's own commits"
+}
+
 test_clean_commits_pass
 test_agent_trailer_fails
 test_lowercase_trailer_label_matches
@@ -214,3 +423,10 @@ test_unresolvable_base_fails_closed
 test_empty_range_is_a_clean_pass
 test_no_args_mode_uses_local_main_merge_base
 test_help_prints_usage
+test_upstream_sync_ref_excludes_upstream_commit_but_still_scans_a_later_fork_commit
+test_upstream_sync_ref_excludes_a_trailer_already_carried_by_upstream
+test_upstream_sync_ref_still_scans_a_merged_side_branch_fork_commit
+test_upstream_sync_ref_unresolvable_warns_and_scans_full_range
+test_upstream_sync_ref_excluding_every_commit_says_so
+test_lint_upstream_fetch_failure_warns_and_scans_full_range
+test_lint_upstream_fetch_success_applies_exclusion
