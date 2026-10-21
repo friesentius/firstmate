@@ -553,9 +553,17 @@ test_home_seed_no_projects_end_to_end() {
   # firstmate's own shared tracked material with an empty fleet (AGENTS.md
   # section 1) - must come out with the agent trailer stripped and a human
   # co-author kept, proving the git-layer hook is actually armed there.
+  # bin/fm-git-strip-ai-trailers.sh never touches the repository's own git
+  # config (see its header); fm-spawn only activates the installed hooks dir
+  # for a launched pane via GIT_CONFIG_* env, so this probe sets the same
+  # environment a launched pane for this task would inherit.
+  local git_hooks_dir="$home/state/fdev.git-hooks"
+  [ -d "$git_hooks_dir" ] || fail "project-less secondmate spawn did not install the AI-trailer strip hooks at $git_hooks_dir"
   printf 'probe\n' > "$sub_abs/backstop-probe.txt"
-  git -C "$sub_abs" add -A
-  git -C "$sub_abs" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' \
+  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$git_hooks_dir" \
+    git -C "$sub_abs" add -A
+  GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0="$git_hooks_dir" \
+    git -C "$sub_abs" -c user.name='Firstmate Tests' -c user.email='tests@example.invalid' \
     commit -q -F - <<EOF || fail "probe commit in the secondmate home was rejected"
 probe the secondmate home
 
