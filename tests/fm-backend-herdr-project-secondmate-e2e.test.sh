@@ -70,6 +70,10 @@ cleanup_all() {
   [ -n "$WT_CM2" ] && command -v treehouse >/dev/null 2>&1 && treehouse return --force "$WT_CM2" >/dev/null 2>&1
   [ -n "$WT_CM3" ] && command -v treehouse >/dev/null 2>&1 && treehouse return --force "$WT_CM3" >/dev/null 2>&1
   herdr_safe_stop_and_delete "$SESSION"
+  # The AI-trailer strip hooks this test installs are chmod 500 directories
+  # (bin/fm-git-strip-ai-trailers.sh); restore write access before removal so
+  # cleanup does not leave read-only hook files behind.
+  find "$TMP_ROOT" -type d -exec chmod u+rwx {} + 2>/dev/null || true
   rm -rf "$TMP_ROOT"
 }
 trap cleanup_all EXIT
@@ -118,6 +122,10 @@ done
 
 SM_HOME="$TMP_ROOT/secondmate-home"
 mkdir -p "$SM_HOME/state" "$SM_HOME/data/smtask" "$SM_HOME/config" "$SM_HOME/projects" "$SM_HOME/bin"
+# A secondmate launch's worktree is its own home, and fm-spawn.sh now installs
+# the AI-trailer strip hooks there unconditionally; give this fixture a
+# resolvable git-dir the same way make_seeded_secondmate_home() does.
+git -C "$SM_HOME" init -q
 printf '# scratch secondmate home AGENTS.md placeholder\n' > "$SM_HOME/AGENTS.md"
 printf 'e2esm1\n' > "$SM_HOME/.fm-secondmate-home"
 printf 'trivial e2e secondmate charter: nothing to do.\n' > "$SM_HOME/data/charter.md"
