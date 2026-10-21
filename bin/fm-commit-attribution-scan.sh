@@ -67,13 +67,15 @@
 # upstream), is still scanned - this is why the exclusion uses
 # `git rev-list <head> --not <base> <upstream-ref>` rather than
 # `--first-parent`, which would also skip fork commits landed on a merged side
-# branch. Unset, this scans the full range exactly as before. Set to a value
-# that does not resolve to a commit, this fails closed (exit 2) rather than
-# silently scanning the full range or silently scanning nothing - the same
-# posture as an empty FM_AGENT_COAUTHOR_ADDRESSES. Both callers below resolve
-# this from a direct, anonymous fetch of the upstream URL rather than a
-# preconfigured remote, so neither needs repo-local remote setup; see their
-# own fetch steps for the exact command.
+# branch. Unset or empty, this scans the full range exactly as before. Set to
+# a value that does not resolve to a commit, this prints a warning and scans
+# the full range with no exclusion: scanning more commits is strictly
+# stricter, so an unavailable upstream never weakens the check and never fails
+# it on its own. Both callers below resolve this from a direct, anonymous
+# fetch of the upstream URL rather than a preconfigured remote, so neither
+# needs repo-local remote setup, and both leave it empty (with their own
+# warning) when that fetch fails; see their own fetch steps for the exact
+# command.
 #
 # Usage:
 #   fm-commit-attribution-scan.sh                scan this branch's commits
@@ -180,13 +182,15 @@ else
 fi
 
 UPSTREAM_EXCLUDE=()
+exclusion_note=
 if [ -n "${FM_UPSTREAM_SYNC_REF:-}" ]; then
-  upstream_sha=$(git rev-parse --verify -q "${FM_UPSTREAM_SYNC_REF}^{commit}" 2>/dev/null) || {
-    printf 'fm-commit-attribution-scan.sh: FM_UPSTREAM_SYNC_REF=%s is not a resolvable commit.\n' \
+  if upstream_sha=$(git rev-parse --verify -q "${FM_UPSTREAM_SYNC_REF}^{commit}" 2>/dev/null); then
+    UPSTREAM_EXCLUDE=("$upstream_sha")
+    exclusion_note=", excluding commits reachable from upstream $upstream_sha"
+  else
+    printf 'fm-commit-attribution-scan.sh: warning: FM_UPSTREAM_SYNC_REF=%s is not a resolvable commit; scanning the full range with no upstream exclusion.\n' \
       "$FM_UPSTREAM_SYNC_REF" >&2
-    exit 2
-  }
-  UPSTREAM_EXCLUDE=("$upstream_sha")
+  fi
 fi
 
 COMMITS=()
@@ -196,7 +200,7 @@ while IFS= read -r sha; do
 done < <(git rev-list "$head_ref" --not "$range_start" "${UPSTREAM_EXCLUDE[@]+"${UPSTREAM_EXCLUDE[@]}"}" 2>/dev/null)
 
 if [ "${#COMMITS[@]}" -eq 0 ]; then
-  printf 'fm-commit-attribution-scan.sh: no commits in range %s..%s\n' "$range_start" "$head_ref"
+  printf 'fm-commit-attribution-scan.sh: no commits in range %s..%s%s\n' "$range_start" "$head_ref" "$exclusion_note"
   exit 0
 fi
 
@@ -216,8 +220,8 @@ for sha in "${COMMITS[@]}"; do
 done
 
 if [ "$overall_rc" -eq 0 ]; then
-  printf 'fm-commit-attribution-scan.sh: no agent co-author trailers found in %s commit(s) (%s..%s)\n' \
-    "$checked" "$range_start" "$head_ref"
+  printf 'fm-commit-attribution-scan.sh: no agent co-author trailers found in %s commit(s) (%s..%s%s)\n' \
+    "$checked" "$range_start" "$head_ref" "$exclusion_note"
 else
   printf 'fm-commit-attribution-scan.sh: AGENTS.md section 1 forbids an agent name as a commit co-author. Remove the trailer(s) above (for example with git commit --amend or an interactive rebase) and update the branch.\n' >&2
 fi
