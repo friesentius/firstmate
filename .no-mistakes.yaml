@@ -45,6 +45,16 @@ document:
 # PR's exact base/head SHAs. See the script's own header for the full
 # mechanics and residual limitations.
 #
+# Before running the trusted script, resolve this fork's upstream
+# (kunchenguid/firstmate) default branch with a direct anonymous fetch (no
+# `git remote add`, so no repo-local config is left behind) and pass it as
+# FM_UPSTREAM_SYNC_REF, so a sync-merge PR is not re-flagged for trailers on
+# commits upstream already published; see the script's own header for why
+# this excludes rather than skips commits and what still gets scanned. Under
+# `set -e` a failed fetch aborts the step, the same fail-closed posture CI's
+# job below uses - an ordinary PR with nothing upstream-related pays one
+# small anonymous fetch per lint run for this.
+#
 # Keep commands.test absent; the firstmate-coding-guidelines skill owns this policy.
 commands:
   lint: |
@@ -58,7 +68,11 @@ commands:
     trap 'rm -f "$trusted_script"' EXIT
     if git show "$base_ref:bin/fm-commit-attribution-scan.sh" > "$trusted_script" 2>/dev/null; then
       chmod +x "$trusted_script"
-      "$trusted_script"
+      git fetch -q https://github.com/kunchenguid/firstmate.git main || {
+        echo "fm-commit-attribution-scan.sh: could not fetch kunchenguid/firstmate main to resolve the upstream-sync exclusion ref." >&2
+        exit 2
+      }
+      FM_UPSTREAM_SYNC_REF=$(git rev-parse FETCH_HEAD) "$trusted_script"
     else
       echo "fm-commit-attribution-scan.sh: not found at trusted base $base_ref (expected only while this script is new, before it first lands on the default branch); falling back to the working-tree copy, which is not trust-pinned." >&2
       bin/fm-commit-attribution-scan.sh

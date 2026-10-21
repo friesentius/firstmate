@@ -101,7 +101,14 @@ jobs:
           trusted_script="$RUNNER_TEMP/fm-commit-attribution-scan.trusted.sh"
           if git show "$BASE_SHA:bin/fm-commit-attribution-scan.sh" > "$trusted_script" 2>/dev/null; then
             chmod +x "$trusted_script"
-            "$trusted_script" "$BASE_SHA" "$HEAD_SHA"
+            # Direct anonymous fetch (no `git remote add`, no repo-local config
+            # left behind) of this fork's upstream default branch, excluded
+            # from the scan below so a sync-merge PR is not re-flagged for
+            # trailers on commits upstream already published; see the
+            # script's own header for why this excludes rather than skips
+            # commits. A failed fetch aborts this step under set -eu.
+            git fetch -q https://github.com/kunchenguid/firstmate.git main
+            FM_UPSTREAM_SYNC_REF=$(git rev-parse FETCH_HEAD) "$trusted_script" "$BASE_SHA" "$HEAD_SHA"
           else
             echo "::warning::bin/fm-commit-attribution-scan.sh not found at base $BASE_SHA (expected only while this script is new, before it first lands on the default branch); falling back to the PR's own working-tree copy, which is not trust-pinned." >&2
             bin/fm-commit-attribution-scan.sh "$BASE_SHA" "$HEAD_SHA"

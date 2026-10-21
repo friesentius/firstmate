@@ -203,6 +203,113 @@ test_help_prints_usage() {
   pass "--help prints usage and exits 0"
 }
 
+test_upstream_sync_ref_excludes_upstream_commit_but_still_scans_a_later_fork_commit() {
+  local tmp
+  tmp=$(fm_test_tmproot fm-cas-sync-fork-after)
+  fm_cas_repo "$tmp"
+  git -C "$tmp" checkout -qb upstream
+  printf 'up\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "upstream work"
+  local upstream_sha
+  upstream_sha=$(git -C "$tmp" rev-parse HEAD)
+  git -C "$tmp" checkout -q main
+  git -C "$tmp" merge -q --no-ff -m "Merge upstream" upstream
+  printf 'fork\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "$(printf 'fork change\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n')"
+  local fork_sha
+  fork_sha=$(git -C "$tmp" rev-parse --short HEAD)
+  local initial_sha
+  initial_sha=$(git -C "$tmp" rev-parse "main~2")
+
+  local rc=0 out
+  out=$(cd "$tmp" && FM_UPSTREAM_SYNC_REF="$upstream_sha" "$SCAN" "$initial_sha" main 2>&1) || rc=$?
+  expect_code 1 "$rc" "a fork commit after a merged upstream commit must still fail"
+  assert_contains "$out" "$fork_sha" "failure did not name the fork commit"
+  case "$out" in
+    *"$(git -C "$tmp" rev-parse --short "$upstream_sha")"*)
+      fail "the excluded upstream commit must not be named in the failure output"
+      ;;
+  esac
+  pass "FM_UPSTREAM_SYNC_REF excludes the upstream commit while a later fork commit with a trailer still fails"
+}
+
+test_upstream_sync_ref_excludes_a_trailer_already_carried_by_upstream() {
+  local tmp
+  tmp=$(fm_test_tmproot fm-cas-sync-upstream-trailer)
+  fm_cas_repo "$tmp"
+  git -C "$tmp" checkout -qb upstream
+  printf 'up\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "$(printf 'upstream agent commit\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n')"
+  local upstream_sha
+  upstream_sha=$(git -C "$tmp" rev-parse HEAD)
+  git -C "$tmp" checkout -q main
+  git -C "$tmp" merge -q --no-ff -m "Merge upstream" upstream
+  local initial_sha
+  initial_sha=$(git -C "$tmp" rev-parse "main~1")
+
+  local rc=0 out
+  out=$(cd "$tmp" && "$SCAN" "$initial_sha" main 2>&1) || rc=$?
+  expect_code 1 "$rc" "without the exclusion, the upstream commit's own trailer must still fail the scan"
+
+  rc=0
+  out=$(cd "$tmp" && FM_UPSTREAM_SYNC_REF="$upstream_sha" "$SCAN" "$initial_sha" main 2>&1) || rc=$?
+  expect_code 0 "$rc" "with the exclusion, a trailer already carried by the excluded upstream commit must pass"
+  assert_contains "$out" "no agent co-author trailers found" \
+    "the exclusion did not report a clean result"
+  pass "a legitimate upstream-reachable commit with a trailer is excluded only when FM_UPSTREAM_SYNC_REF names it"
+}
+
+test_upstream_sync_ref_still_scans_a_merged_side_branch_fork_commit() {
+  local tmp
+  tmp=$(fm_test_tmproot fm-cas-sync-side-branch)
+  fm_cas_repo "$tmp"
+  local initial_sha
+  initial_sha=$(git -C "$tmp" rev-parse HEAD)
+
+  git -C "$tmp" checkout -qb upstream
+  printf 'up\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "unrelated upstream work"
+  local upstream_sha
+  upstream_sha=$(git -C "$tmp" rev-parse HEAD)
+
+  git -C "$tmp" checkout -q main
+  git -C "$tmp" checkout -qb side
+  printf 'side\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "$(printf 'side-branch change\n\nCo-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>\n')"
+  local side_sha
+  side_sha=$(git -C "$tmp" rev-parse --short HEAD)
+  git -C "$tmp" checkout -q main
+  git -C "$tmp" merge -q --no-ff -m "Merge side branch" side
+
+  local rc=0 out
+  out=$(cd "$tmp" && FM_UPSTREAM_SYNC_REF="$upstream_sha" "$SCAN" "$initial_sha" main 2>&1) || rc=$?
+  expect_code 1 "$rc" "a fork commit landed on a merged side branch must still fail, not be skipped like --first-parent would"
+  assert_contains "$out" "$side_sha" "failure did not name the side-branch fork commit"
+  pass "FM_UPSTREAM_SYNC_REF does not hide a fork commit on a merged side branch (non-first-parent scan)"
+}
+
+test_upstream_sync_ref_unresolvable_fails_closed() {
+  local tmp
+  tmp=$(fm_test_tmproot fm-cas-sync-unresolvable)
+  fm_cas_repo "$tmp"
+  git -C "$tmp" checkout -qb feature
+  printf 'two\n' >> "$tmp/f.txt"
+  git -C "$tmp" add f.txt
+  git -C "$tmp" commit -q -m "ordinary change"
+
+  local rc=0 out
+  out=$(cd "$tmp" && FM_UPSTREAM_SYNC_REF='no-such-upstream-ref' "$SCAN" main feature 2>&1) || rc=$?
+  expect_code 2 "$rc" "an unresolvable FM_UPSTREAM_SYNC_REF must fail closed, not pass silently"
+  assert_contains "$out" "FM_UPSTREAM_SYNC_REF" "failure did not name the offending variable"
+  assert_contains "$out" "is not a resolvable commit" "failure did not report a clear diagnostic"
+  pass "FM_UPSTREAM_SYNC_REF set to an unresolvable ref fails closed"
+}
+
 test_clean_commits_pass
 test_agent_trailer_fails
 test_lowercase_trailer_label_matches
@@ -214,3 +321,7 @@ test_unresolvable_base_fails_closed
 test_empty_range_is_a_clean_pass
 test_no_args_mode_uses_local_main_merge_base
 test_help_prints_usage
+test_upstream_sync_ref_excludes_upstream_commit_but_still_scans_a_later_fork_commit
+test_upstream_sync_ref_excludes_a_trailer_already_carried_by_upstream
+test_upstream_sync_ref_still_scans_a_merged_side_branch_fork_commit
+test_upstream_sync_ref_unresolvable_fails_closed

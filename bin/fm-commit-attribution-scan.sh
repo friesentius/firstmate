@@ -58,6 +58,23 @@
 # on every pull_request event, so this is believed to cover all real PRs, but
 # nothing on this script's side proves that requirement stays wired up.
 #
+# FM_UPSTREAM_SYNC_REF: an optional resolvable commit-ish naming this fork's
+# upstream (kunchenguid/firstmate) default branch. When set, every commit the
+# scanned range shares with that ref's history is excluded, so a sync-merge PR
+# carrying upstream's own already-published commits is not re-flagged for
+# trailers the fork never had a chance to strip; every fork-authored commit in
+# the range, including the merge commit itself (never reachable from
+# upstream), is still scanned - this is why the exclusion uses
+# `git rev-list <head> --not <base> <upstream-ref>` rather than
+# `--first-parent`, which would also skip fork commits landed on a merged side
+# branch. Unset, this scans the full range exactly as before. Set to a value
+# that does not resolve to a commit, this fails closed (exit 2) rather than
+# silently scanning the full range or silently scanning nothing - the same
+# posture as an empty FM_AGENT_COAUTHOR_ADDRESSES. Both callers below resolve
+# this from a direct, anonymous fetch of the upstream URL rather than a
+# preconfigured remote, so neither needs repo-local remote setup; see their
+# own fetch steps for the exact command.
+#
 # Usage:
 #   fm-commit-attribution-scan.sh                scan this branch's commits
 #                                                 since its merge-base with
@@ -162,11 +179,21 @@ else
   exit 2
 fi
 
+UPSTREAM_EXCLUDE=()
+if [ -n "${FM_UPSTREAM_SYNC_REF:-}" ]; then
+  upstream_sha=$(git rev-parse --verify -q "${FM_UPSTREAM_SYNC_REF}^{commit}" 2>/dev/null) || {
+    printf 'fm-commit-attribution-scan.sh: FM_UPSTREAM_SYNC_REF=%s is not a resolvable commit.\n' \
+      "$FM_UPSTREAM_SYNC_REF" >&2
+    exit 2
+  }
+  UPSTREAM_EXCLUDE=("$upstream_sha")
+fi
+
 COMMITS=()
 while IFS= read -r sha; do
   [ -n "$sha" ] || continue
   COMMITS+=("$sha")
-done < <(git rev-list "$range_start..$head_ref" 2>/dev/null)
+done < <(git rev-list "$head_ref" --not "$range_start" "${UPSTREAM_EXCLUDE[@]+"${UPSTREAM_EXCLUDE[@]}"}" 2>/dev/null)
 
 if [ "${#COMMITS[@]}" -eq 0 ]; then
   printf 'fm-commit-attribution-scan.sh: no commits in range %s..%s\n' "$range_start" "$head_ref"
