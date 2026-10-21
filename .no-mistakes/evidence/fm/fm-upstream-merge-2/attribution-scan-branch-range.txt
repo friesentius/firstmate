@@ -1,0 +1,14 @@
+$ FM_UPSTREAM_SYNC_REF=97316301 <trusted base copy of fm-commit-attribution-scan.sh> 29054f6a bea981fe
+fm-commit-attribution-scan.sh: no agent co-author trailers found in 8 commit(s) (29054f6a..bea981fe, excluding commits reachable from upstream 97316301353be6a9edf154598e07095b3d0c926d)
+exit 0
+
+$ (same, with no upstream exclusion - strict mode)
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>
+Co-authored-by: Claude Opus 5 (1M context) <noreply@anthropic.com>
+fm-commit-attribution-scan.sh: agent co-author trailer in 1b0fbb9b (fix(bin): pre-register claude workspace trust at spawn time (#3663)): Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
+Co-authored-by: Claude Opus 5 <noreply@anthropic.com>
+fm-commit-attribution-scan.sh: agent co-author trailer in ed44d150 (feat: structure no-mistakes ask-user escalations (#3670)): Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Co-authored-by: Claude Sonnet 5 <noreply@anthropic.com>
+fm-commit-attribution-scan.sh: AGENTS.md section 1 forbids an agent name as a commit co-author. Remove the trailer(s) above (for example with git commit --amend or an interactive rebase) and update the branch.
+exit 

@@ -1,0 +1,19 @@
+Claude Code 2.1.306 (Claude Code)
+=== withkeys: .claude/settings.json
+{
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "includeCoAuthoredBy": false
+}
+=== withkeys: HEAD commit message (git log -1 --format=%B)
+add hello
+
+=== nokeys: .claude/settings.json
+{}
+=== nokeys: HEAD commit message (git log -1 --format=%B)
+add hello
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+
