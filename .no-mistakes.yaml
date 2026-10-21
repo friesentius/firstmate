@@ -70,7 +70,7 @@ commands:
     if git show "$base_ref:bin/fm-commit-attribution-scan.sh" > "$trusted_script" 2>/dev/null; then
       chmod +x "$trusted_script"
       upstream_ref=
-      if git fetch -q https://github.com/kunchenguid/firstmate.git main; then
+      if GIT_TERMINAL_PROMPT=0 git -c http.lowSpeedLimit=1 -c http.lowSpeedTime=30 fetch -q https://github.com/kunchenguid/firstmate.git main; then
         upstream_ref=$(git rev-parse FETCH_HEAD)
       else
         echo "fm-commit-attribution-scan.sh: warning: could not fetch kunchenguid/firstmate main; scanning the full range with no upstream-sync exclusion." >&2

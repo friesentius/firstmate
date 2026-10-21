@@ -371,14 +371,15 @@ test_lint_upstream_fetch_failure_warns_and_scans_full_range() {
   tmp=$(fm_test_tmproot fm-cas-lint-fetch-fail)
   fm_cas_lint_repo "$tmp"
   git -C "$tmp" commit -q --allow-empty -m "ordinary change"
+  git -C "$tmp" commit -q --allow-empty -m "second ordinary change"
 
   local rc=0 out
   out=$(fm_cas_run_lint "$tmp" "file://$tmp/no-such-upstream") || rc=$?
   expect_code 0 "$rc" "an upstream fetch failure alone must not fail lint"
   assert_contains "$out" "warning: could not fetch kunchenguid/firstmate main" \
     "an upstream fetch failure did not print a clear warning"
-  assert_contains "$out" "no agent co-author trailers found in 1 commit(s)" \
-    "an upstream fetch failure did not scan the full range"
+  assert_contains "$out" "no agent co-author trailers found in 2 commit(s)" \
+    "an upstream fetch failure did not scan every commit in the range"
   assert_not_contains "$out" "excluding commits reachable from upstream" \
     "an upstream fetch failure must not apply any exclusion"
 
