@@ -72,7 +72,11 @@ document:
 # extensions.worktreeConfig and pins core.hookspath per worktree (see
 # `no-mistakes init`'s own hook-path isolation), so `git config --worktree`
 # here is confined to this one run's worktree and never touches the shared
-# repository config or another lane's worktree. The script's own header owns
+# repository config or another lane's worktree. install leaves the hooks dir
+# read-only, but it lives inside this run's private git-dir, which no-mistakes
+# deletes with the worktree when the run ends, so prepare restores the dir's
+# owner write bit or that teardown (git worktree remove/prune) fails with
+# Permission denied. The script's own header owns
 # the strip mechanics and install layout; see it for the full picture, and
 # tests/fm-git-strip-ai-trailers.test.sh for the matcher's coverage.
 commands:
@@ -81,6 +85,7 @@ commands:
     hooks_dir="$(git rev-parse --path-format=absolute --git-dir)/fm-no-coauthor-hooks"
     wt="$(git rev-parse --path-format=absolute --show-toplevel)"
     bin/fm-git-strip-ai-trailers.sh install "$hooks_dir" "$wt"
+    chmod u+w "$hooks_dir"
     git config --worktree core.hooksPath "$hooks_dir"
 
   lint: |
