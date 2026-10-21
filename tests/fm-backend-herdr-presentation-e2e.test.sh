@@ -1490,6 +1490,71 @@ teardown_task "$LOCK_WAIT_ID" "$HOME_DIR" > "$TMP_ROOT/lock-wait-teardown.out" 2
 "$REAL_TREEHOUSE" return --force "$LOCK_WAIT_NEW_WT" >/dev/null 2>&1 || true
 pass "real Herdr lab: --herdr-resume-lock-wait waits out session lock contention instead of refusing"
 
+# Without any opt-in, a default exact resume must still outlast a concurrent
+# recovery's own critical section. Hold the shared session lock for as long as
+# a loaded real recovery was measured to hold it (~17.5s), well past the
+# create-path ~5s bound, and assert the default resume waits and succeeds
+# rather than refusing as a concurrent resume.
+LOCK_MARGIN_ID=lock-margin-resume-r1
+mkdir -p "$HOME_DIR/data/$LOCK_MARGIN_ID"
+write_ship_brief "$HOME_DIR" "$LOCK_MARGIN_ID" 'Resume lock-margin fixture.'
+spawn_task "$LOCK_MARGIN_ID" "$HOME_DIR" "$RECOVERY_PROJECT_DIR" > "$TMP_ROOT/lock-margin-first.out" 2> "$TMP_ROOT/lock-margin-first.err" \
+  || fail "lock-margin recovery fixture failed: $(cat "$TMP_ROOT/lock-margin-first.err")"
+LOCK_MARGIN_META="$HOME_DIR/state/$LOCK_MARGIN_ID.meta"
+LOCK_MARGIN_OLD_WT=$(remember_meta_worktree "$LOCK_MARGIN_META")
+LOCK_MARGIN_WSID=$(grep '^herdr_workspace_id=' "$LOCK_MARGIN_META" | cut -d= -f2-)
+LOCK_MARGIN_OLD_PANE=$(grep '^herdr_pane_id=' "$LOCK_MARGIN_META" | cut -d= -f2-)
+PATH="$HERDR_ORIGINAL_PATH" "$HERDR_LAB_HELPER" stop "$HERDR_LAB_SESSION" >/dev/null \
+  || fail "could not stop the isolated session for resume lock-margin"
+PATH="$HERDR_ORIGINAL_PATH" "$HERDR_LAB_HELPER" provision "$HERDR_LAB_SESSION" \
+  || fail "could not reprovision the isolated session for resume lock-margin"
+
+LOCK_MARGIN_READY="$TMP_ROOT/lock-margin-ready"
+LOCK_MARGIN_HOLD_SECONDS=18
+LOCK_MARGIN_PATH=$(session_presentation_lock_path) \
+  || fail "could not resolve session lock for resume lock-margin"
+ROOT="$ROOT" READY="$LOCK_MARGIN_READY" HOLD="$LOCK_MARGIN_HOLD_SECONDS" LOCK="$LOCK_MARGIN_PATH" bash -c '
+  . "$ROOT/bin/fm-wake-lib.sh"
+  fm_lock_try_acquire "$LOCK" || exit 1
+  : > "$READY"
+  sleep "$HOLD"
+  fm_lock_release "$LOCK"
+' &
+LOCK_REFUSE_HOLDER_PID=$!
+while [ ! -e "$LOCK_MARGIN_READY" ] && kill -0 "$LOCK_REFUSE_HOLDER_PID" 2>/dev/null; do sleep 0.01; done
+[ -e "$LOCK_MARGIN_READY" ] || fail "could not hold the session presentation lock for resume lock-margin"
+
+LOCK_MARGIN_FOCUS=$(focus_snapshot)
+LOCK_MARGIN_START=$(date +%s)
+if SPAWN_DEADLINE_SECONDS=$((LOCK_MARGIN_HOLD_SECONDS + 60)) \
+    spawn_task "$LOCK_MARGIN_ID" "$HOME_DIR" "$RECOVERY_PROJECT_DIR" \
+    > "$TMP_ROOT/lock-margin-resume.out" 2> "$TMP_ROOT/lock-margin-resume.err"; then
+  LOCK_MARGIN_STATUS=0
+else
+  LOCK_MARGIN_STATUS=$?
+fi
+LOCK_MARGIN_ELAPSED=$(( $(date +%s) - LOCK_MARGIN_START ))
+wait "$LOCK_REFUSE_HOLDER_PID" || fail "resume lock-margin lock holder failed"
+LOCK_REFUSE_HOLDER_PID=
+[ "$LOCK_MARGIN_STATUS" -eq 0 ] \
+  || fail "default resumed identity refused a ${LOCK_MARGIN_HOLD_SECONDS}s concurrent-recovery-length hold: $(cat "$TMP_ROOT/lock-margin-resume.err")"
+[ "$LOCK_MARGIN_ELAPSED" -ge $((LOCK_MARGIN_HOLD_SECONDS - 5)) ] \
+  || fail "default resumed recovery returned after ${LOCK_MARGIN_ELAPSED}s, too soon to have waited out a ${LOCK_MARGIN_HOLD_SECONDS}s hold"
+LOCK_MARGIN_NEW_WT=$(remember_meta_worktree "$LOCK_MARGIN_META")
+[ "$(grep '^herdr_workspace_id=' "$LOCK_MARGIN_META" | cut -d= -f2-)" = "$LOCK_MARGIN_WSID" ] \
+  || fail "default resume lock-margin flattened the task into a different workspace"
+[ "$(grep '^herdr_pane_id=' "$LOCK_MARGIN_META" | cut -d= -f2-)" != "$LOCK_MARGIN_OLD_PANE" ] \
+  || fail "default resume lock-margin reused the old husk pane"
+if lab pane get "$LOCK_MARGIN_OLD_PANE" >/dev/null 2>&1; then
+  fail "default resume lock-margin left the old husk pane behind"
+fi
+assert_focus_is "$LOCK_MARGIN_FOCUS" "resume lock-margin"
+teardown_task "$LOCK_MARGIN_ID" "$HOME_DIR" > "$TMP_ROOT/lock-margin-teardown.out" 2> "$TMP_ROOT/lock-margin-teardown.err" \
+  || fail "resume lock-margin fixture teardown failed: $(cat "$TMP_ROOT/lock-margin-teardown.err")"
+"$REAL_TREEHOUSE" return --force "$LOCK_MARGIN_OLD_WT" >/dev/null 2>&1 || true
+"$REAL_TREEHOUSE" return --force "$LOCK_MARGIN_NEW_WT" >/dev/null 2>&1 || true
+pass "real Herdr lab: default resumed identity outlasts a concurrent-recovery-length session lock hold"
+
 # Seed a legacy old-format primary projection and a flat secondmate tab; correction must not migrate them.
 LEGACY_OUT=$(lab workspace create --cwd "$PROJECT_DIR" --label "firstmate/legacy-seed · p:AbCdEfGhIjKlMnOpQrStUv" --no-focus) \
   || fail "could not seed a legacy old-format presentation space"

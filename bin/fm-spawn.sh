@@ -152,7 +152,8 @@
 #   canonical socket, outside any home's state/) through launch handoff.
 #   On contention a create makes one bounded attempt and falls back to the
 #   ordinary flat layout before any projection mutation. A resume refuses by
-#   default on the same contention (it does not degrade flat; a concurrent
+#   default on contention after a longer bound sized to a concurrent
+#   recovery's critical section (it does not degrade flat; a concurrent
 #   resume is a hard failure). Pass --herdr-resume-lock-wait to opt that
 #   resume into waiting for the lock instead, so two concurrent recoveries
 #   can serialize and each still replace its own exact husk. The flag acts
