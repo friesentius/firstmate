@@ -317,7 +317,7 @@ That trust covers only the `commands.lint` command string itself, not the conten
 `.github/workflows/ci.yml`'s "Commit attribution" job runs the same trusted-base-ref fetch independently, given the PR's exact base/head SHAs.
 Both surfaces fall back to running the working-tree copy, with a visible warning, only when the base ref predates the script's existence (true only until it first lands on the default branch).
 This does not pin the CI job's own definition: GitHub runs a `pull_request`-triggered job's definition from the PR's own branch, not the base branch, so a PR could still remove or alter the "Commit attribution" job in `ci.yml`, and this repo currently has no branch protection requiring any CI job to pass before merge - a structural gap shared by every job in that workflow, not specific to this check.
-no-mistakes has no generic custom-gate hook beyond overriding a named step's own command (`commands.{test,lint,format}`), so both integrations reuse the lint step rather than adding a new one; the script's own header owns the exact matching rule, the trusted-base-ref fetch mechanics, and documented limitations.
+no-mistakes has no generic custom-gate hook beyond its `commands.*` entries (`prepare` for per-run worktree setup, which `.no-mistakes.yaml` uses for the gate's commit-msg trailer strip, and the named `test`, `lint`, and `format` step overrides), so both integrations reuse the lint step rather than adding a new one; the script's own header owns the exact matching rule, the trusted-base-ref fetch mechanics, and documented limitations.
 
 ## Two task shapes
 
