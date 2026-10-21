@@ -1,0 +1,17 @@
+ok - a clean commit range passes
+ok - a commit with an agent co-author trailer fails and names it
+ok - the trailer label match is case-insensitive
+ok - a legitimate human co-author trailer survives
+ok - an address mentioned in prose (not a trailer) does not false-positive
+ok - FM_AGENT_COAUTHOR_ADDRESSES extends the matched address list
+ok - a whitespace-only FM_AGENT_COAUTHOR_ADDRESSES fails closed instead of scanning nothing
+ok - an unresolvable base ref fails closed with a clear diagnostic
+ok - an empty commit range reports itself explicitly and passes
+ok - no-args mode auto-detects the range against local main
+ok - --help prints usage and exits 0
+ok - FM_UPSTREAM_SYNC_REF excludes the upstream commit while a later fork commit with a trailer still fails
+ok - a legitimate upstream-reachable commit with a trailer is excluded only when FM_UPSTREAM_SYNC_REF names it
+ok - FM_UPSTREAM_SYNC_REF does not hide a fork commit on a merged side branch (non-first-parent scan)
+ok - FM_UPSTREAM_SYNC_REF set to an unresolvable ref warns and scans the full range
+ok - a range fully excluded as upstream-reachable names the exclusion
+not ok - ruby is required to parse .no-mistakes.yaml

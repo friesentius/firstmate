@@ -1,0 +1,41 @@
+### S1: real lint chain (real GitHub fetch) on sync-merge of real upstream main
+[stub fm-lint.sh]
+fm-commit-attribution-scan.sh: no agent co-author trailers found in 1 commit(s) (0b273c02da363b78e3c111a54e16460b805d1a6d..HEAD, excluding commits reachable from upstream 97316301353be6a9edf154598e07095b3d0c926d)
+exit=0 elapsed=1s
+
+### S2 (adversarial): fork-authored commit with agent trailer on a merged side branch, on top of the sync merge
+[stub fm-lint.sh]
+fm-commit-attribution-scan.sh: agent co-author trailer in 778898d7 (fork side work): Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+fm-commit-attribution-scan.sh: AGENTS.md section 1 forbids an agent name as a commit co-author. Remove the trailer(s) above (for example with git commit --amend or an interactive rebase) and update the branch.
+exit=1 elapsed=0s
+
+### S3 (adversarial): sync merge commit itself carries an agent trailer
+fm-lint-workflows.sh: actionlint 1.7.12 (pinned 1.7.12)
+fm-lint-workflows.sh: 3 workflow files valid
+fm-commit-attribution-scan.sh: agent co-author trailer in 3118dd0b (Merge kunchenguid/firstmate main): Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+fm-commit-attribution-scan.sh: AGENTS.md section 1 forbids an agent name as a commit co-author. Remove the trailer(s) above (for example with git commit --amend or an interactive rebase) and update the branch.
+exit=1 elapsed=3s
+
+### S4: upstream unreachable (fetch redirected to closed port) on the sync merge -> warn, full range, strict failure on upstream trailers
+Co-authored-by: Claude Opus 5 <noreply@anthropic.com>
+fm-commit-attribution-scan.sh: agent co-author trailer in ed44d150 (feat: structure no-mistakes ask-user escalations (#3670)): Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>
+Co-authored-by: Claude Sonnet 5 <noreply@anthropic.com>
+fm-commit-attribution-scan.sh: AGENTS.md section 1 forbids an agent name as a commit co-author. Remove the trailer(s) above (for example with git commit --amend or an interactive rebase) and update the branch.
+exit=1 elapsed=6s
+flagged trailer lines: 53
+
+### S5: upstream unreachable on an ordinary clean branch -> warn, full range scanned, exit 0
+fm-lint-workflows.sh: 3 workflow files valid
+fatal: unable to access 'https://127.0.0.1:9/x.git/': Failed to connect to 127.0.0.1:9 after 0 ms: Could not connect to server
+fm-commit-attribution-scan.sh: warning: could not fetch kunchenguid/firstmate main; scanning the full range with no upstream-sync exclusion.
+fm-commit-attribution-scan.sh: no agent co-author trailers found in 2 commit(s) (0b273c02da363b78e3c111a54e16460b805d1a6d..HEAD)
+exit=0 elapsed=3s
+
+### S6: unresolvable FM_UPSTREAM_SYNC_REF given directly to the script -> warning, full range scan
+fm-commit-attribution-scan.sh: warning: FM_UPSTREAM_SYNC_REF=does-not-exist is not a resolvable commit; scanning the full range with no upstream exclusion.
+fm-commit-attribution-scan.sh: no agent co-author trailers found in 2 commit(s) (0b273c02da363b78e3c111a54e16460b805d1a6d..HEAD)
+exit=0
+
+### S7: branch fully excluded as upstream-reachable (fast-forward to upstream commit, no fork commits)
+/tmp/fmcas-e2e.s1YL/drive.sh: line 28: bin/fm-commit-attribution-scan.sh: No such file or directory
+exit=127

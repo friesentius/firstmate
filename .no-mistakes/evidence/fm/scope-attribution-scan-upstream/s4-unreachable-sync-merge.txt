@@ -1,0 +1,5 @@
+### S4 (rerun, warning lines): upstream unreachable on the sync merge
+exit=1
+fatal: unable to access 'https://127.0.0.1:9/x.git/': Failed to connect to 127.0.0.1:9 after 0 ms: Could not connect to server
+fm-commit-attribution-scan.sh: warning: could not fetch kunchenguid/firstmate main; scanning the full range with no upstream-sync exclusion.
+flagged commits: 20

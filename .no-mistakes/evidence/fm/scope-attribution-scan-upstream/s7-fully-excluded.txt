@@ -1,0 +1,3 @@
+### S7: branch fully excluded as upstream-reachable (fast-forward to upstream commit, no fork commits)
+fm-commit-attribution-scan.sh: no commits in range origin/main..ffonly, excluding commits reachable from upstream 97316301353be6a9edf154598e07095b3d0c926d
+exit=0
