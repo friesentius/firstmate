@@ -45,7 +45,7 @@ Inspect the pane to identify which dialog is on screen, and report it rather tha
 A launch under `config/claude-permission-mode=auto` never meets the bypass confirmation, because it does not request bypass mode: on 2.1.269 `claude --permission-mode auto` reached the composer directly with the footer `⏵⏵ auto mode on (shift+tab to cycle)`, so a captain who refuses the bypass dialog selects `auto` there instead of accepting it.
 The workspace-trust dialog is unaffected by the permission mode and still needs the pre-registration above.
 
-Claude Code adds a `Co-Authored-By` commit trailer by default, so the settings `../../../bin/fm-spawn.sh` generates suppress it, and `../../../docs/verification/runtime-backends.md` under "Commit attribution" owns the verified key semantics.
+Claude Code adds a `Co-Authored-By` commit trailer by default; the tracked `../../../../../.claude/settings.json` turns it off for any Claude session started in a Firstmate checkout, the primary included, and `../../../../../docs/configuration.md` "Commit attribution" owns how launched workers suppress and strip it.
 
 ## Composer ghost
 

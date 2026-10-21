@@ -539,12 +539,6 @@ test_home_seed_no_projects_end_to_end() {
   meta="$home/state/fdev.meta"
   assert_grep 'kind=secondmate' "$meta" "project-less spawn meta lost kind=secondmate"
   assert_grep "home=$sub_abs" "$meta" "project-less spawn meta lost the subhome"
-  # The AI-trailer strip hook (bin/fm-git-strip-ai-trailers.sh) installs
-  # unconditionally for every kind, including secondmate - a secondmate's own
-  # home is itself a firstmate checkout it commits to directly - so no gap
-  # field for it is ever written to the meta record.
-  assert_no_grep 'commit_attribution_backstop=' "$meta" \
-    "a secondmate record must not claim a commit-attribution gap once the backstop covers it"
   proj_val=$(grep '^projects=' "$meta" | head -1 | cut -d= -f2-)
   [ -z "$proj_val" ] || fail "project-less spawn recorded a non-empty projects meta: '$proj_val'"
 

@@ -808,8 +808,9 @@ Firstmate does not rewrite exports: hidden custom messages were always part of t
 `tests/fm-calm-pi-extension.test.sh`'s rendered export DOM assertion therefore accepts either full omission (older Pi) or `hook-message-hidden` entries hidden by the export's own default stylesheet (Pi 0.99.x), and still fails when any custom message entry renders without that class, when the synthetic label appears outside a hidden entry, or when the page loads with hidden messages shown.
 
 The same Pi 0.99.1 upgrade also changed `dist/core/tools/render-utils.js`'s `formatToolCallWithArgs`, the stock `ToolExecutionComponent` call-header fallback, to fold collapsed and expanded tool args into the call line; the 0.87.1 fallback showed only the tool name.
-`.pi/extensions/fm-branch-supervision.ts`'s `fm_branch_outcomes` and `fm_branch_processed` renderers now probe the installed Pi's own stock fallback at runtime (`getStockCallIncludesArgs`, the same probing style `getStockOutcomesPreviewLines` already used) instead of assuming either shape, and reproduce whichever one the probe finds.
-`tests/fm-pi-branch-extension.test.sh`'s `test_outcomes_tool_uses_stock_execution_and_export_consumers` passed byte-for-byte against both an isolated 0.87.1 install and an isolated 0.99.1 install (`FM_PI_PACKAGE_DIR`), and the full `tests/fm-pi-branch-extension.test.sh` and `tests/fm-pi-primary-types.test.sh` suites passed against both.
+`.pi/extensions/fm-branch-supervision.ts`'s `fm_branch_outcomes` and `fm_branch_processed` renderers now read the loaded Pi's `VERSION` and fold the args into the call header only for 0.99 or later (`stockCallHeaderShowsArgs`), reproducing whichever stock shape that version renders.
+The threshold is static, so a future Pi release that changes the stock call-header shape again needs a manual update to that check.
+`tests/fm-pi-branch-extension.test.sh`'s `test_outcomes_tool_call_headers_follow_the_loaded_pi_version` pins both shapes, and the full `tests/fm-pi-branch-extension.test.sh` and `tests/fm-pi-primary-types.test.sh` suites passed against isolated 0.87.1 and 0.99.1 installs (`FM_PI_PACKAGE_DIR`).
 
 ## 2026-09-25 Claude Code 2.1.280 verification and the record-backed operational doorbell
 
