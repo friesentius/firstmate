@@ -1,0 +1,10 @@
+=== S4 run teardown: git worktree remove --force runA, then prune
+error: failed to delete 'worktrees/runA': Permission denied
+worktree remove exit=255
+error: failed to delete 'worktrees/runA': Permission denied
+prune exit=0
+remaining worktree metadata:
+runA
+runB
+/tmp/nm-gate-e2e.cHNMPH/gate.git (bare)
+/tmp/nm-gate-e2e.cHNMPH/runB     56db10cb (detached HEAD)

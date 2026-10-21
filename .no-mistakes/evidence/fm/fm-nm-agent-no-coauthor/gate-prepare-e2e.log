@@ -1,0 +1,43 @@
+
+=== commands.prepare as executed (new)
+set -e
+hooks_dir="$(git rev-parse --path-format=absolute --git-dir)/fm-no-coauthor-hooks"
+wt="$(git rev-parse --path-format=absolute --show-toplevel)"
+bin/fm-git-strip-ai-trailers.sh install "$hooks_dir" "$wt"
+chmod u+w "$hooks_dir"
+git config --worktree core.hooksPath "$hooks_dir"
+
+=== run prepare in runA (sh -c, cwd=run worktree)
+prepare exit=0
+
+=== runA effective core.hooksPath
+file:/tmp/nm-gate-e2e.1RsZJ4/gate.git/worktrees/runA/config.worktree	/tmp/nm-gate-e2e.1RsZJ4/gate.git/worktrees/runA/fm-no-coauthor-hooks
+drwx------ 2 friesent friesent 4096 Oct 21 11:49 /tmp/nm-gate-e2e.1RsZJ4/gate.git/worktrees/runA/fm-no-coauthor-hooks
+
+=== S1 agent commit in runA with AI + human co-author trailers
+commit exit=0
+  | fix(ci): repair flaky check
+  | 
+  | Co-authored-by: Jane Human <jane@example.com>
+  | 
+
+=== S2 isolation: shared mirror config unchanged, sibling runB untouched
+shared config: UNCHANGED
+file:/tmp/nm-gate-e2e.1RsZJ4/gate.git/worktrees/runB/config.worktree	/tmp/nm-gate-e2e.1RsZJ4/gate.git/hooks
+  | other lane
+  | 
+  | Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+  | 
+
+=== S3 prepare rerun in runA is idempotent
+rerun exit=0
+  | second
+  | 
+
+=== S4 run teardown: git worktree remove --force runA, then prune
+worktree remove exit=0
+prune exit=0
+remaining worktree metadata:
+runB
+/tmp/nm-gate-e2e.1RsZJ4/gate.git (bare)
+/tmp/nm-gate-e2e.1RsZJ4/runB     98890fe2 (detached HEAD)
