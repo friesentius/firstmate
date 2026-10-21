@@ -701,6 +701,15 @@ $ FM_SUPERVISION_HOST_LIVE_E2E=1 tests/fm-supervision-host-live-e2e.test.sh
 ok - supervision host live (2.1.281 (Claude Code)): a real engine handles and resumes away wakes under the branch contract without waking main
 ```
 
+Reconfirmed on 2026-10-20 on Linux (Arch) with Claude Code 2.1.305, Herdr 0.9.5, after merging kunchenguid/firstmate's upstream main into this fork:
+
+```text
+$ FM_SUPERVISION_HOST_LIVE_E2E=1 tests/fm-supervision-host-live-e2e.test.sh
+# first turn: handled	turn=host-258813-1792549550.1	posture=away	rc=0
+# second turn: handled	turn=host-258813-1792549550.2	posture=away	rc=0
+ok - supervision host live (2.1.305 (Claude Code)): a real engine handles and resumes away wakes under the branch contract without waking main
+```
+
 A real Claude primary with the host on supervised real Pi workers on a disposable repository through attended work and three away windows:
 
 | Case | Observed |
