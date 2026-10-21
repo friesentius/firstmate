@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Strip AI co-author trailers from a commit message, and
-# install that strip as a per-task git commit-msg hook for a fleet launch.
+# install that strip as a per-task git commit-msg hook for a fleet launch
+# (or, via .no-mistakes.yaml's commands.prepare, a no-mistakes gate run).
 #
 # Usage:
 #   fm-git-strip-ai-trailers.sh <msgfile>
