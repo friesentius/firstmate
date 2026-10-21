@@ -304,6 +304,10 @@ EOF
       "$HERDR_LAB_HELPER" teardown "$HERDR_LAB_SESSION" >/dev/null 2>&1 || true
     LAB_READY=0
   fi
+  # The AI-trailer strip hooks this test's secondmate homes install are chmod
+  # 500 directories (bin/fm-git-strip-ai-trailers.sh); restore write access
+  # before removal so cleanup does not leave read-only hook files behind.
+  find "$TMP_ROOT" -type d -exec chmod u+rwx {} + 2>/dev/null || true
   rm -rf "$TMP_ROOT"
 }
 trap cleanup_all EXIT
