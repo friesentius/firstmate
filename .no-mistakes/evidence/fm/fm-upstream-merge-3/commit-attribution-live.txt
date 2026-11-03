@@ -1,0 +1,27 @@
++(eval):2> git init -q /tmp/fm-attr.Slif/repo
++(eval):2> cd /tmp/fm-attr.Slif/repo
++(eval):2> git -c 'user.email=a@b' -c 'user.name=dev' commit -q --allow-empty -m base
++(eval):3> /home/friesent/.no-mistakes/worktrees/911e8d678c92/01M6FHM2VZ35QKV2DXJ844Q08V/bin/fm-git-strip-ai-trailers.sh install /tmp/fm-attr.Slif/hooks /tmp/fm-attr.Slif/repo
++(eval):4> /home/friesent/.no-mistakes/worktrees/911e8d678c92/01M6FHM2VZ35QKV2DXJ844Q08V/bin/fm-git-strip-ai-trailers.sh env-file /tmp/fm-attr.Slif/hooks /tmp/fm-attr.Slif/env.sh
++(eval):4> . /tmp/fm-attr.Slif/env.sh
++/tmp/fm-attr.Slif/env.sh:1> export GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/tmp/fm-attr.Slif/hooks GIT_CONFIG_COUNT=1
++(eval):5> echo x
++(eval):5> git add f
++(eval):6> git -c 'user.email=a@b' -c 'user.name=dev' commit -q -m $'feat: x\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\nCo-authored-by: Real Human <human@example.com>'
++(eval):10> git log -1 '--format=%B'
+feat: x
+
+Co-authored-by: Real Human <human@example.com>
+
++(eval):11> unset GIT_CONFIG_COUNT GIT_CONFIG_KEY_0 GIT_CONFIG_VALUE_0
++(eval):12> git -c 'user.email=a@b' -c 'user.name=dev' commit -q --allow-empty --no-verify -m $'chore: bypass\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>'
++(eval):15> /home/friesent/.no-mistakes/worktrees/911e8d678c92/01M6FHM2VZ35QKV2DXJ844Q08V/bin/fm-commit-attribution-scan.sh 'HEAD~2' 'HEAD~1'
+fm-commit-attribution-scan.sh: no agent co-author trailers found in 1 commit(s) (HEAD~2..HEAD~1)
++(eval):15> echo 'scan(clean range) exit=0'
+scan(clean range) exit=0
++(eval):16> /home/friesent/.no-mistakes/worktrees/911e8d678c92/01M6FHM2VZ35QKV2DXJ844Q08V/bin/fm-commit-attribution-scan.sh 'HEAD~2' HEAD
+fm-commit-attribution-scan.sh: agent co-author trailer in 62411ce (chore: bypass): Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+fm-commit-attribution-scan.sh: AGENTS.md section 1 forbids an agent name as a commit co-author. Remove the trailer(s) above (for example with git commit --amend or an interactive rebase) and update the branch.
++(eval):16> echo 'scan(bypass range) exit=1'
+scan(bypass range) exit=1
++(eval):17> set +x

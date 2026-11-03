@@ -1,0 +1,6 @@
+ok - real herdr E2E: the secondmate's own home workspace is live before any routed placement is tested
+ok - real herdr E2E: cm1 (secondmate-covered project) spawns successfully
+ok - real herdr E2E: cm1 lands in the covering secondmate's OWN workspace, never a separate project workspace, and persists no project record
+ok - real herdr E2E: a second task for the same secondmate-covered project converges on the same secondmate workspace
+ok - real herdr E2E: a project with no covering secondmate keeps the ordinary project-workspace behavior, unchanged
+ok - real herdr E2E: tearing down the secondmate-routed cm1 uses only the primary's own overrides, closes only its own tab, and leaves the secondmate's own tab and shared workspace untouched

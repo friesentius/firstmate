@@ -1,0 +1,9 @@
+ok - real herdr E2E: project grouping spawns cm1 into project alpha's shared workspace
+ok - real herdr E2E: cm1 landed in the persisted project-alpha workspace with a correct record
+ok - real herdr E2E: cm2, a second task for the SAME project, lands in cm1's own shared workspace
+ok - real herdr E2E: project beta gets its own workspace, never the pre-existing decoy sharing its label
+ok - real herdr E2E: tearing down cm1 leaves project alpha's still-populated workspace and cm2 untouched
+ok - real herdr E2E: tearing down cm2, project alpha's last task, removes the drained shared workspace
+ok - real herdr E2E: a spawn into a drained project self-heals with a fresh workspace and a rewritten record
+ok - real herdr E2E: project beta's workspace and task were never affected by project alpha's teardown/self-heal
+ok - real herdr E2E: a project directory basename with unsafe characters falls back flat with a warning instead of aborting the spawn
