@@ -17,7 +17,7 @@ Pi 0.81.1 was installed when Calm was first built, and Pi 0.82.0 was the later r
 The inspected Pi CHANGELOG shows no relevant presentation API introduced at either version, so those versions remain verification evidence rather than compatibility bounds.
 The exported classes used by the adapters (`AssistantMessageComponent` and `InteractiveMode`) are undocumented internals with no stated version guarantee.
 `tests/fm-calm-pi-extension.test.sh` records the installed Pi version as evidence without gating on it and covers both newer synthetic versions and an unavailable adapter seam.
-This host tracks Pi latest, so the version the evidence is pinned to moves; the [2026-09-30 record](#2026-09-30-pi-0991-hidden-custom-message-export-rendering) owns the currently pinned version and the renderer comparison behind it, and CI now installs that same pinned version explicitly (`.github/workflows/ci.yml`).
+This host tracks Pi latest, so the version the evidence is pinned to moves; the [2026-09-30 record](#2026-09-30-pi-0991-hidden-custom-message-export-rendering) owns the currently pinned version and the renderer comparison behind it, while CI installs the latest Pi (`.github/workflows/ci.yml`).
 
 ### Built-in tool override constraints
 
