@@ -260,6 +260,24 @@ run_autoarm_bg() {
   RUN_AUTOARM_BG_PID=$!
 }
 
+# A backgrounded `sleep` is briefly a forked copy of its shell before it execs,
+# and fm_pid_identity covers the command line, so an identity recorded in that
+# window never recomputes again and the fixture reads as a reused pid. Wait for
+# the exec before recording a sleeper's identity. Exported so the `bash -c`
+# probes below can call it too.
+fm_test_await_exec() {  # <pid>
+  local i=0
+  while [ "$i" -lt 400 ]; do
+    case "$(ps -o comm= -p "$1" 2>/dev/null)" in
+      *sleep) return 0 ;;
+    esac
+    sleep 0.05
+    i=$((i + 1))
+  done
+  return 1
+}
+export -f fm_test_await_exec
+
 watcher_identity() {
   local dir=$1 pid=$2
   FM_STATE_OVERRIDE="$dir/state" bash -c '. "$1"; fm_pid_identity "$2"' _ "$dir/bin/fm-wake-lib.sh" "$pid"
@@ -495,6 +513,7 @@ test_actionable_close_with_live_successor_rewakes_once() {
   write_arm_fixture "$dir" actionable
   sleep 60 &
   pid=$!
+  fm_test_await_exec "$pid" || fail "a fixture sleeper never exec'd sleep"
   identity=$(watcher_identity "$dir" "$pid") || fail "could not identify live successor for actionable close"
   record_watcher_lock "$dir" "$pid" "$identity"
   touch "$dir/state/.last-watcher-beat"
@@ -669,6 +688,7 @@ test_benign_cycle_end_with_live_watcher_is_silent() {
   write_arm_fixture "$dir" benign-live
   sleep 60 &
   pid=$!
+  fm_test_await_exec "$pid" || fail "a fixture sleeper never exec'd sleep"
   identity=$(watcher_identity "$dir" "$pid") || fail "could not identify live watcher holder for benign close"
   record_watcher_lock "$dir" "$pid" "$identity"
   touch "$dir/state/.last-watcher-beat"
@@ -698,6 +718,7 @@ test_positive_recovery_budget_contention_preserves_episode() {
   write_arm_fixture "$dir" benign-live
   sleep 60 &
   pid=$!
+  fm_test_await_exec "$pid" || fail "a fixture sleeper never exec'd sleep"
   identity=$(watcher_identity "$dir" "$pid") || fail "could not identify live watcher holder for recovery contention"
   record_watcher_lock "$dir" "$pid" "$identity"
   touch "$dir/state/.last-watcher-beat"
@@ -734,6 +755,7 @@ test_owner_mutex_contention_preserves_failure_episode_reset() {
   write_arm_fixture "$dir" reset-boundary
   sleep 60 &
   watcher=$!
+  fm_test_await_exec "$watcher" || fail "a fixture sleeper never exec'd sleep"
   watcher_id=$(watcher_identity "$dir" "$watcher") || fail "could not identify reset-contention watcher"
   record_watcher_lock "$dir" "$watcher" "$watcher_id"
   touch "$dir/state/.last-watcher-beat"
@@ -1015,6 +1037,7 @@ test_fresh_arming_claim_with_stale_beacon_is_never_reclaimed() {
   write_arm_fixture "$dir" actionable
   sleep 60 &
   pid=$!
+  fm_test_await_exec "$pid" || fail "a fixture sleeper never exec'd sleep"
   record_autoarm_owner "$dir" "$pid"
   record_autoarm_owner_identity "$dir" "$pid" || fail "could not record a claim pid-identity"
   printf 'epoch=464 owner_pid=%s outcome=arming updated_at=%s\n' "$pid" "$(date +%s)" \
@@ -1119,6 +1142,7 @@ test_identity_matched_arming_claim_is_never_reclaimed() {
   write_arm_fixture "$dir" actionable
   sleep 60 &
   pid=$!
+  fm_test_await_exec "$pid" || fail "a fixture sleeper never exec'd sleep"
   record_autoarm_owner "$dir" "$pid"
   record_autoarm_owner_identity "$dir" "$pid" || fail "could not record a claim pid-identity"
   record_autoarm_epoch "$dir" 464 "$pid" arming
@@ -1165,6 +1189,7 @@ test_stuck_live_legacy_owner_is_retired_and_reclaimed() {
   write_arm_fixture "$dir" actionable
   sleep 60 &
   pid=$!
+  fm_test_await_exec "$pid" || fail "a fixture sleeper never exec'd sleep"
   record_autoarm_owner "$dir" "$pid"
   record_autoarm_owner_identity "$dir" "$pid" || fail "could not record a claim pid-identity"
   record_autoarm_epoch "$dir" 464 "$pid" arming
@@ -1190,6 +1215,7 @@ test_stopped_legacy_owner_is_reclaimed_with_term_pending() {
   write_arm_fixture "$dir" actionable
   sleep 60 &
   pid=$!
+  fm_test_await_exec "$pid" || fail "a fixture sleeper never exec'd sleep"
   record_autoarm_owner "$dir" "$pid"
   record_autoarm_owner_identity "$dir" "$pid" || fail "could not record a claim pid-identity"
   record_autoarm_epoch "$dir" 464 "$pid" arming
@@ -1245,6 +1271,7 @@ test_open_generation_claim_defers_without_any_lock() {
         printf "%s\n" "$$" > "$FM_HOME/state/.lock"
         sleep 60 &
         owner=$!
+        fm_test_await_exec "$owner" || exit 97
         identity=$(. "$FM_HOME/bin/fm-wake-lib.sh"; fm_pid_identity "$owner") || exit 97
         printf "epoch=464 owner_pid=%s outcome=arming updated_at=1\n%s\n" "$owner" "$identity" \
           > "$FM_HOME/state/.claude-autoarm-epoch"
@@ -1273,6 +1300,7 @@ test_stuck_generation_claim_is_superseded_and_rearms() {
   write_arm_fixture "$dir" actionable
   sleep 60 &
   pid=$!
+  fm_test_await_exec "$pid" || fail "a fixture sleeper never exec'd sleep"
   record_autoarm_v2_claim "$dir" 464 "$pid" arming "$pid" || fail "could not record a v2 claim"
   touch -t 202001010000 "$dir/state/.claude-autoarm-epoch"
   touch -t 202001010000 "$dir/state/.last-watcher-beat"
@@ -1452,10 +1480,13 @@ test_recycled_bridge_claim_stays_open_on_session_id_match() {
         . "$1/bin/fm-session-lock-lib.sh"
         sleep 60 &
         owner=$!
+        fm_test_await_exec "$owner" || exit 97
         sleep 60 &
         other=$!
+        fm_test_await_exec "$other" || exit 97
         sleep 61 &
         predecessor=$!
+        fm_test_await_exec "$predecessor" || exit 97
         identity=$(fm_pid_identity "$owner") || exit 97
         lock_identity=$(fm_pid_identity "$other") || exit 97
         if [ "$4" != current ]; then
@@ -1510,6 +1541,7 @@ test_claim_without_numeric_session_lock_is_not_open() {
         . "$1/bin/fm-wake-lib.sh"
         sleep 60 &
         owner=$!
+        fm_test_await_exec "$owner" || exit 97
         identity=$(fm_pid_identity "$owner") || exit 97
         printf "epoch=464 owner_pid=%s outcome=arming updated_at=1\n%s\n" "$owner" "$identity" \
           > "$1/state/.claude-autoarm-epoch"
