@@ -78,9 +78,17 @@ printf '9999999\n' > "$HOME_DIR/state/.lock"
 
 # Rapid-death arm fixture: started plus an immediate actionable reason, the
 # exact spent-Stop edge shape. Runs 1-2 close actionable; run 3 closes clean so
-# a misbehaving session can never loop forever.
+# a misbehaving session can never loop forever. After each actionable close the
+# product starts a handling-successor arm (FM_WATCH_PREDECESSOR_ARM_PID set) to
+# cover the handling turn; that is not a Stop-owned cycle, so it only reports a
+# started watcher and is logged separately.
 cat > "$PROJECT/bin/fm-watch-arm.sh" <<'SH'
 #!/usr/bin/env bash
+if [ -n "${FM_WATCH_PREDECESSOR_ARM_PID:-}" ]; then
+  echo "successor-run predecessor=$FM_WATCH_PREDECESSOR_ARM_PID pid=$$" >> "$FM_HOME/state/successor-ran"
+  printf 'watcher: started pid=%s (beacon fresh)\n' "$$"
+  exit 0
+fi
 N=$(cat "$FM_HOME/state/arm-count" 2>/dev/null || echo 0); N=$((N+1)); echo "$N" > "$FM_HOME/state/arm-count"
 echo "arm-run=$N pid=$$" >> "$FM_HOME/state/arm-ran"
 if [ "$N" -ge 3 ]; then
@@ -114,7 +122,7 @@ PROMPT='After reading the complete session-start digest, reply with exactly CYCL
   cd "$PROJECT" || exit 1
   FM_HOME="$HOME_DIR" CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false CLAUDE_CODE_SEND_FEEDBACK=0 \
     claude -p "$PROMPT" --dangerously-skip-permissions --settings '{"feedbackDrafts":"off"}' \
-    --effort low --output-format stream-json --verbose
+    --effort low --output-format stream-json --verbose </dev/null
 ) > "$TRANSCRIPT" 2>&1 || fail "Claude credentialed auto-arm session failed: $(tail -20 "$TRANSCRIPT")"
 
 ARM_RUNS=$(wc -l < "$HOME_DIR/state/arm-ran" 2>/dev/null | tr -d ' ')
