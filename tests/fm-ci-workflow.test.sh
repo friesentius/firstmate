@@ -461,11 +461,14 @@ test_full_ci_label_runs_the_whole_suite() {
 
 # DOP-167: main, own branches and write-access authors run everything as today.
 test_trusted_runs_are_unchanged() {
-  local all context actual out
+  local all expected context actual out
   all=$(workflow_jobs | tr '\n' ' ') || fail "could not list ci.yml jobs"
   for context in event=push association=OWNER association=MEMBER association=COLLABORATOR head=kunchenguid/firstmate; do
+    expected=$all
+    # The fork's commit-attribution scan is pull_request-only by design.
+    [ "$context" = event=push ] && expected=${all/commit-attribution /}
     actual=$(jobs_running_under "$context" | tr '\n' ' ') || fail "could not resolve jobs for $context"
-    [ "$actual" = "$all" ] || fail "$context must run every job as before, ran: $actual"
+    [ "$actual" = "$expected" ] || fail "$context must run every job as before, ran: $actual"
     out=$(run_full_suite_verdict "$context") \
       || fail "the Full suite verdict must pass for $context when its lanes passed:"$'\n'"$out"
   done
@@ -519,7 +522,7 @@ test_unrelated_label_never_masks_an_earlier_failure() {
       case "$expect:$name" in
         all-failed:*) want=failure ;;
         waiting:'Full suite') want=failure ;;
-        waiting:'Test coverage guard'|waiting:'Repo invariants') want=success ;;
+        waiting:'Commit attribution'|waiting:'Test coverage guard'|waiting:'Repo invariants') want=success ;;
         waiting:*) want=skipped ;;
       esac
       [ "$conclusion" = "$want" ] \

@@ -121,9 +121,9 @@ jobs:
   # protection requiring it to pass before merge. See the script's own header
   # for the complete residual-limitation note.
   commit-attribution:
-    name: Commit attribution
+    name: ${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'Not run for label - ' || '' }}Commit attribution
     runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request'
+    if: ${{ github.event_name == 'pull_request' && !(github.event.action == 'labeled' && github.event.label.name != 'full-ci') }}
     # Hang tripwire: a lightweight checkout + script run, same cap as its
     # sibling lightweight jobs (test-coverage, invariants).
     timeout-minutes: 5
