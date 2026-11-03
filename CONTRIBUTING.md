@@ -32,7 +32,7 @@ GitHub Actions and Dependabot are exempt so their automation keeps working, but 
 
 ### The `full-ci` label
 
-CI on a pull request from an author without write access runs only the quick checks at first: `Test coverage guard`, `Repo invariants`, and the no-mistakes body check.
+CI on a pull request from an author without write access runs only the quick checks at first: `Commit attribution`, `Test coverage guard`, `Repo invariants`, and the no-mistakes body check.
 Lint and the behavior suites wait for a maintainer, or the maintainer's fleet, to add the `full-ci` label when the pull request is picked up for review.
 Until then the `Full suite` check fails with a message naming the label; that is expected and needs no action from you.
 Adding the label runs the full suite, and every later push to that pull request runs it again.

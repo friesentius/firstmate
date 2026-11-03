@@ -415,7 +415,7 @@ test_only_the_full_ci_label_joins_the_pr_group() {
   pass "only the full-ci label joins and supersedes the PR's group; other labels cancel nothing"
 }
 
-QUICK_JOBS='test-coverage invariants full-suite'
+QUICK_JOBS='commit-attribution test-coverage invariants full-suite'
 
 # DOP-167 direction A: an outside PR without the label runs only the quick
 # checks and the Full suite verdict, which fails naming the label.
