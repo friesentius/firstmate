@@ -185,7 +185,8 @@ IFS= read -r -d '' CREWMATE_PAUSE_INSTRUCTIONS <<EOF || true
    Name what you are waiting for and what will let you resume; do not repeat the declaration on every poll.
    Do not declare active implementation or reasoning as a wait.
    Firstmate may still raise one first-sight alert; the declared wait then uses the existing long recheck cadence instead of repeated possible-wedge alarms.
-   When you know when the wait clears, include \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) for a recheck at that time; for your own background job or command with a timeout, that time is its start plus its timeout, rounded up to the minute.
+   When you know when the wait clears, include \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) for a recheck at that time.
+   For a job you started and control yourself - a background shell, container, or long run, regardless of its own timeout - \`until\` is mandatory and at most 10 minutes ahead; on each resume, inspect its real output or progress before waiting again, and treat no new output as a hang to diagnose, not a reason to keep waiting.
    Follow the resolution rule below when the wait clears, then resume the task.
    Use \`blocked:\` when you are stuck and need help.
 EOF

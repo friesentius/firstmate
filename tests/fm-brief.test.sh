@@ -1078,6 +1078,13 @@ test_ship_and_scout_teach_validation_round_pause() {
       "$kind brief did not require declaring a background-work wait"
     assert_grep 'before waiting on your own pipeline run or a long foreground command' "$brief" \
       "$kind brief did not require declaring a pipeline or foreground wait"
+    # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+    assert_grep 'is mandatory and at most 10 minutes ahead' "$brief" \
+      "$kind brief did not cap a self-started job's recheck to 10 minutes ahead"
+    assert_grep 'on each resume, inspect its real output or progress before waiting again' "$brief" \
+      "$kind brief did not require inspecting a self-started job's real output on resume"
+    assert_grep 'treat no new output as a hang to diagnose, not a reason to keep waiting' "$brief" \
+      "$kind brief did not treat a self-started job's silence as a hang to diagnose"
     assert_grep 'Firstmate may still raise one first-sight alert' "$brief" \
       "$kind brief incorrectly promised to suppress the first alert"
     assert_grep 'Do not declare active implementation or reasoning as a wait' "$brief" \
