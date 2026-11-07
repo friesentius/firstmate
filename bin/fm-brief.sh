@@ -181,12 +181,14 @@ esac
 PAUSED_VERB=${FM_CLASSIFY_PAUSED_VERB:-$FM_CLASSIFY_PAUSED_VERB_DEFAULT}
 IFS= read -r -d '' CREWMATE_PAUSE_INSTRUCTIONS <<EOF || true
    Use \`$PAUSED_VERB: {why}\` - distinct from \`blocked:\` - when deliberately waiting for work or an external condition expected to clear on its own, including your own validation round.
-   Before ending your turn with your own background shell or monitor still running, or before waiting on your own pipeline run or a long foreground command, append \`$PAUSED_VERB [at=<epoch>]: {job and completion condition}\` to the status file.
+   Before ending your turn with your own background shell or monitor still running, or before waiting on it or on your own pipeline run, append \`$PAUSED_VERB [at=<epoch>]: {job and completion condition}\` to the status file.
    Name what you are waiting for and what will let you resume; do not repeat the declaration on every poll, though resuming your own job below always declares again.
    Do not declare active implementation or reasoning as a wait.
    Firstmate may still raise one first-sight alert; the declared wait then uses the existing long recheck cadence instead of repeated possible-wedge alarms.
    When you know when the wait clears, include \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) for a recheck at that time.
-   For a background shell, container, or long run you started and control yourself - including your own validation round, build, or test run, but not the no-mistakes pipeline drive call, which has its own reattach rule - \`until\` is mandatory and at most 10 minutes ahead; on each resume, inspect its real output or progress before waiting again, and treat no new output as a hang to diagnose, not a reason to keep waiting.
+   Run a job you started yourself that may take longer than 10 minutes - your own validation round, build, test run, or container, but not the no-mistakes pipeline drive call, which has its own reattach rule - in the background with its output going to a log; its \`until\` is mandatory and at most 10 minutes ahead.
+   On each resume, read its real output in that log; if it is progressing, append a fresh \`$PAUSED_VERB:\` with an \`until\` at most 10 minutes ahead, and treat no new output as a hang to diagnose, not a reason to keep waiting.
+   A short command of your own that finishes within your harness's command bound stays in the foreground with no \`$PAUSED_VERB:\` line.
    Follow the resolution rule below when the wait clears, then resume the task.
    Use \`blocked:\` when you are stuck and need help.
 EOF
@@ -492,14 +494,14 @@ IFS= read -r -d '' WAIT_SECTION <<'EOF' || true
 Every turn you take resends your whole context, so a wait must cost no turns.
 After you append `needs-decision:` or `blocked:`, end your turn at once: do not check the inbox, the status file, or anything else, because the answer arrives as a terminal message that starts your next turn.
 Wait on anything external - a pipeline gate, PR checks - with ONE blocking shell command that returns when the state changes: `no-mistakes axi run` or `respond` with `--wait`, `gh pr checks <pr> --watch`, or `until <condition>; do sleep 30; done` for anything else.
-Never spend turns on `sleep` followed by a status check, and never background a command in order to poll it.
+Never spend turns on `sleep` followed by a status check, and never background a command in order to poll it, except your own long job under the pause rule above.
 In Claude Code that `until` loop in a single Bash call is the sanctioned foreground wait: when the harness refuses a sleep-then-check command and points you at backgrounding instead, reissue the wait as the loop rather than accepting the background.
 Bound that command by what your harness lets one command run: in Pi pass the bash tool a `timeout` of at most 2700 seconds, because Pi sets none by default; in Claude Code pass the Bash tool its maximum `timeout` of 600000 ms, because its default is 2 minutes; in Codex keep waiting on a still-running command with empty `write_stdin` polls of up to 300000 ms; elsewhere pass your shell tool its largest timeout and assume at most 10 minutes.
 Give any `--wait` a duration a little under that bound.
 When the bound passes with nothing changed, run the same blocking command again, with no status check in between.
 The one exception is `respond`: it sent its answer before it began waiting, so reattach with `no-mistakes axi run --wait` instead, and never send the same `respond` again, because it would answer whichever gate parks next without you reading it.
 A wait your shell can watch this way needs no `paused:` line, except your own pipeline run, which you declare once just before its blocking hold: append `paused:` once just before its first blocking command, then stay in the command, and never append it again as you reissue that command.
-Your own job - a validation round, build, or test run, foreground or backgrounded - follows the pause rule above instead: bound each hold to its `until`, not the harness ceiling, and declare again rather than reissuing silently.
+That own long job waits in ONE blocking `until` loop on its completion, bounded at 10 minutes rather than the harness ceiling; then read its log and renew `paused:` as the pause rule says instead of reissuing the loop silently.
 EOF
 WAIT_SECTION=${WAIT_SECTION%$'\n'}
 WAIT_BLOCK=

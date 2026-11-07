@@ -1076,19 +1076,26 @@ test_ship_and_scout_teach_validation_round_pause() {
       "$kind brief did not teach workers to declare their validation-round wait"
     assert_grep 'Before ending your turn with your own background shell or monitor still running' "$brief" \
       "$kind brief did not require declaring a background-work wait"
-    assert_grep 'before waiting on your own pipeline run or a long foreground command' "$brief" \
-      "$kind brief did not require declaring a pipeline or foreground wait"
+    assert_grep 'or before waiting on it or on your own pipeline run' "$brief" \
+      "$kind brief did not require declaring a background-job or pipeline wait"
+    assert_no_grep 'a long foreground command' "$brief" \
+      "$kind brief still lets a long own job hold the foreground past its 10-minute until"
     # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
-    assert_grep 'is mandatory and at most 10 minutes ahead' "$brief" \
-      "$kind brief did not cap a self-started job's recheck to 10 minutes ahead"
-    assert_grep "on each resume, inspect its real output or progress before waiting again" "$brief" \
-      "$kind brief did not require inspecting a self-started job's real output on resume"
+    assert_grep 'in the background with its output going to a log; its `until` is mandatory and at most 10 minutes ahead' "$brief" \
+      "$kind brief did not background a long self-started job to a log with a 10-minute until"
+    # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+    assert_grep 'On each resume, read its real output in that log; if it is progressing, append a fresh `paused:` with an `until` at most 10 minutes ahead' "$brief" \
+      "$kind brief did not require reading a self-started job's log and renewing its pause on resume"
+    assert_grep "finishes within your harness's command bound stays in the foreground with no \`paused:\` line" "$brief" \
+      "$kind brief did not keep short own commands in the foreground undeclared"
     assert_grep 'treat no new output as a hang to diagnose, not a reason to keep waiting' "$brief" \
       "$kind brief did not treat a self-started job's silence as a hang to diagnose"
     assert_grep "but not the no-mistakes pipeline drive call, which has its own reattach rule" "$brief" \
       "$kind brief did not exclude only the pipeline drive call from the 10-minute own-job cap"
-    assert_grep "Your own job - a validation round, build, or test run, foreground or backgrounded - follows the pause rule above instead" "$brief" \
-      "$kind brief's Waiting section did not route its own validation round, build, or test run back to the 10-minute pause rule"
+    assert_grep "never background a command in order to poll it, except your own long job under the pause rule above" "$brief" \
+      "$kind brief's Waiting section did not allow backgrounding a long own job"
+    assert_grep "That own long job waits in ONE blocking \`until\` loop on its completion, bounded at 10 minutes rather than the harness ceiling" "$brief" \
+      "$kind brief's Waiting section did not bound the own-job wait loop at 10 minutes"
     assert_grep 'Firstmate may still raise one first-sight alert' "$brief" \
       "$kind brief incorrectly promised to suppress the first alert"
     assert_grep 'Do not declare active implementation or reasoning as a wait' "$brief" \
