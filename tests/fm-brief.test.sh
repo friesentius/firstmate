@@ -1081,10 +1081,14 @@ test_ship_and_scout_teach_validation_round_pause() {
     # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
     assert_grep 'is mandatory and at most 10 minutes ahead' "$brief" \
       "$kind brief did not cap a self-started job's recheck to 10 minutes ahead"
-    assert_grep 'on each resume, inspect its real output or progress before waiting again' "$brief" \
+    assert_grep "inspect the job's real output or progress before every resume" "$brief" \
       "$kind brief did not require inspecting a self-started job's real output on resume"
     assert_grep 'treat no new output as a hang to diagnose, not a reason to keep waiting' "$brief" \
       "$kind brief did not treat a self-started job's silence as a hang to diagnose"
+    assert_grep "other than the no-mistakes pipeline run or your own validation round, which reattach under the guidance below instead" "$brief" \
+      "$kind brief did not exclude the pipeline run and validation round from the 10-minute own-job cap"
+    assert_grep "If your own job cannot be watched this way and you end your turn with it backgrounded instead, the pause rule above governs" "$brief" \
+      "$kind brief's Waiting section did not route a backgrounded own job back to the 10-minute pause rule"
     assert_grep 'Firstmate may still raise one first-sight alert' "$brief" \
       "$kind brief incorrectly promised to suppress the first alert"
     assert_grep 'Do not declare active implementation or reasoning as a wait' "$brief" \
