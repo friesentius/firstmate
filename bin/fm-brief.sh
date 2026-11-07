@@ -499,7 +499,7 @@ Give any `--wait` a duration a little under that bound.
 When the bound passes with nothing changed, run the same blocking command again, with no status check in between.
 The one exception is `respond`: it sent its answer before it began waiting, so reattach with `no-mistakes axi run --wait` instead, and never send the same `respond` again, because it would answer whichever gate parks next without you reading it.
 A wait your shell can watch this way needs no `paused:` line, except your own pipeline run, which you declare once just before its blocking hold: append `paused:` once just before its first blocking command, then stay in the command, and never append it again as you reissue that command.
-Your own job - a validation round, build, or test run, foreground or backgrounded - follows the pause rule above instead: bound each hold to its `until` (at most 10 minutes ahead), not the harness ceiling, inspect its real output or progress on every resume, and declare again rather than reissuing silently.
+Your own job - a validation round, build, or test run, foreground or backgrounded - follows the pause rule above instead: bound each hold to its `until`, not the harness ceiling, and declare again rather than reissuing silently.
 EOF
 WAIT_SECTION=${WAIT_SECTION%$'\n'}
 WAIT_BLOCK=
