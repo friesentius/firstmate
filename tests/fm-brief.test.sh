@@ -1064,10 +1064,10 @@ test_ship_and_scout_teach_validation_round_pause() {
       FM_HOME="$home" "$ROOT/bin/fm-brief.sh" "$id" firstmate --mode no-mistakes >/dev/null 2>&1
     fi
     brief="$home/data/$id/brief.md"
-    assert_grep "your own validation round, which you declare once just before its blocking hold" "$brief" \
-      "$kind brief did not teach workers to declare their validation-round wait before holding it"
+    assert_grep "except your own pipeline run, which you declare once just before its blocking hold" "$brief" \
+      "$kind brief did not limit the declare-once Waiting treatment to the pipeline run"
     assert_grep "append \`paused:\` once just before its first blocking command, then stay in the command" "$brief" \
-      "$kind brief's Waiting section does not declare the validation round once and then hold it"
+      "$kind brief's Waiting section does not declare the pipeline run once and then hold it"
     assert_no_grep "is not a \`paused:\` wait" "$brief" \
       "$kind brief still tells workers never to declare a wait they hold in a command"
     assert_no_grep "heavy-test slot" "$brief" \
@@ -1081,14 +1081,14 @@ test_ship_and_scout_teach_validation_round_pause() {
     # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
     assert_grep 'is mandatory and at most 10 minutes ahead' "$brief" \
       "$kind brief did not cap a self-started job's recheck to 10 minutes ahead"
-    assert_grep "inspect the job's real output or progress before every resume" "$brief" \
+    assert_grep "on each resume, inspect its real output or progress before waiting again" "$brief" \
       "$kind brief did not require inspecting a self-started job's real output on resume"
     assert_grep 'treat no new output as a hang to diagnose, not a reason to keep waiting' "$brief" \
       "$kind brief did not treat a self-started job's silence as a hang to diagnose"
-    assert_grep "other than the no-mistakes pipeline run or your own validation round, which reattach under the guidance below instead" "$brief" \
-      "$kind brief did not exclude the pipeline run and validation round from the 10-minute own-job cap"
-    assert_grep "If your own job cannot be watched this way and you end your turn with it backgrounded instead, the pause rule above governs" "$brief" \
-      "$kind brief's Waiting section did not route a backgrounded own job back to the 10-minute pause rule"
+    assert_grep "but not the no-mistakes pipeline drive call, which has its own reattach rule" "$brief" \
+      "$kind brief did not exclude only the pipeline drive call from the 10-minute own-job cap"
+    assert_grep "Your own job - a validation round, build, or test run, foreground or backgrounded - follows the pause rule above instead" "$brief" \
+      "$kind brief's Waiting section did not route its own validation round, build, or test run back to the 10-minute pause rule"
     assert_grep 'Firstmate may still raise one first-sight alert' "$brief" \
       "$kind brief incorrectly promised to suppress the first alert"
     assert_grep 'Do not declare active implementation or reasoning as a wait' "$brief" \
@@ -1336,6 +1336,9 @@ test_wait_no_turns_absent_keeps_the_previous_brief() {
   assert_grep "background the drive call" "$brief" "an absent flag replaced the backgrounded drive text"
   assert_no_grep "issue the same foreground call again" "$brief" \
     "an absent flag still asked for the foreground reattach"
+  # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
+  assert_grep "is mandatory and at most 10 minutes ahead" "$brief" \
+    "an absent flag dropped the own-job 10-minute until cap, which does not depend on wait-no-turns"
   pass "fm-brief: without config/wait-no-turns the brief and drive text stay as they were"
 }
 

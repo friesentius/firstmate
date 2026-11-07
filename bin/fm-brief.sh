@@ -186,7 +186,7 @@ IFS= read -r -d '' CREWMATE_PAUSE_INSTRUCTIONS <<EOF || true
    Do not declare active implementation or reasoning as a wait.
    Firstmate may still raise one first-sight alert; the declared wait then uses the existing long recheck cadence instead of repeated possible-wedge alarms.
    When you know when the wait clears, include \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) for a recheck at that time.
-   For a background shell, container, or long run you started and control yourself - other than the no-mistakes pipeline run or your own validation round, which reattach under the guidance below instead - \`until\` is mandatory and at most 10 minutes ahead; inspect the job's real output or progress before every resume, and treat no new output as a hang to diagnose, not a reason to keep waiting.
+   For a background shell, container, or long run you started and control yourself - including your own validation round, build, or test run, but not the no-mistakes pipeline drive call, which has its own reattach rule - \`until\` is mandatory and at most 10 minutes ahead; on each resume, inspect its real output or progress before waiting again, and treat no new output as a hang to diagnose, not a reason to keep waiting.
    Follow the resolution rule below when the wait clears, then resume the task.
    Use \`blocked:\` when you are stuck and need help.
 EOF
@@ -498,8 +498,8 @@ Bound that command by what your harness lets one command run: in Pi pass the bas
 Give any `--wait` a duration a little under that bound.
 When the bound passes with nothing changed, run the same blocking command again, with no status check in between.
 The one exception is `respond`: it sent its answer before it began waiting, so reattach with `no-mistakes axi run --wait` instead, and never send the same `respond` again, because it would answer whichever gate parks next without you reading it.
-A wait your shell can watch this way needs no `paused:` line, except your own pipeline run or your own validation round, which you declare once just before its blocking hold: append `paused:` once just before its first blocking command, then stay in the command, and never append it again as you reissue that command.
-If your own job cannot be watched this way and you end your turn with it backgrounded instead, the pause rule above governs: a fresh `until` at most 10 minutes ahead and a real output check on every resume, not a one-time declaration.
+A wait your shell can watch this way needs no `paused:` line, except your own pipeline run, which you declare once just before its blocking hold: append `paused:` once just before its first blocking command, then stay in the command, and never append it again as you reissue that command.
+Your own job - a validation round, build, or test run, foreground or backgrounded - follows the pause rule above instead: bound each hold to its `until` (at most 10 minutes ahead), not the harness ceiling, inspect its real output or progress on every resume, and declare again rather than reissuing silently.
 EOF
 WAIT_SECTION=${WAIT_SECTION%$'\n'}
 WAIT_BLOCK=
