@@ -1086,8 +1086,8 @@ test_ship_and_scout_teach_validation_round_pause() {
     # shellcheck disable=SC2016 # Literal backticks must remain unexpanded.
     assert_grep 'On each resume, read its real output in that log; if it is progressing, append a fresh `paused:` with an `until` at most 10 minutes ahead' "$brief" \
       "$kind brief did not require reading a self-started job's log and renewing its pause on resume"
-    assert_grep "finishes within your harness's command bound stays in the foreground with no \`paused:\` line" "$brief" \
-      "$kind brief did not keep short own commands in the foreground undeclared"
+    assert_grep "A command of your own expected to finish within 10 minutes stays in the foreground with no \`paused:\` line" "$brief" \
+      "$kind brief did not keep own commands under 10 minutes in the foreground undeclared"
     assert_grep 'treat no new output as a hang to diagnose, not a reason to keep waiting' "$brief" \
       "$kind brief did not treat a self-started job's silence as a hang to diagnose"
     assert_grep "but not the no-mistakes pipeline drive call, which has its own reattach rule" "$brief" \

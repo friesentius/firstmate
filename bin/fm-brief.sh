@@ -188,7 +188,7 @@ IFS= read -r -d '' CREWMATE_PAUSE_INSTRUCTIONS <<EOF || true
    When you know when the wait clears, include \`until <YYYY-MM-DDTHH:MMZ>\` (UTC) for a recheck at that time.
    Run a job you started yourself that may take longer than 10 minutes - your own validation round, build, test run, or container, but not the no-mistakes pipeline drive call, which has its own reattach rule - in the background with its output going to a log; its \`until\` is mandatory and at most 10 minutes ahead.
    On each resume, read its real output in that log; if it is progressing, append a fresh \`$PAUSED_VERB:\` with an \`until\` at most 10 minutes ahead, and treat no new output as a hang to diagnose, not a reason to keep waiting.
-   A short command of your own that finishes within your harness's command bound stays in the foreground with no \`$PAUSED_VERB:\` line.
+   A command of your own expected to finish within 10 minutes stays in the foreground with no \`$PAUSED_VERB:\` line.
    Follow the resolution rule below when the wait clears, then resume the task.
    Use \`blocked:\` when you are stuck and need help.
 EOF
