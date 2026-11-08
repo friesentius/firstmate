@@ -1,0 +1,2 @@
+paused [at=1794097489]: own e2e suite run (log work-w1/e2e.log), resumes when it prints ALL PASSED or exits; until 2026-11-08T00:34Z
+paused [at=1794098039]: own e2e suite run progressing (27/75 specs), resumes when it exits; until 2026-11-08T00:43Z

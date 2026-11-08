@@ -1,0 +1,2 @@
+paused [at=1794097493]: own e2e suite run (pid 4140218, log data/r2-w2/e2e.log) until it exits; recheck log until 2026-11-08T00:34Z
+done [at=1794098068]: e2e suite does not pass - hangs after 2/75 at hardcoded 'sleep 100000' (e2e.sh:6), never runs Docker/Obsidian; no failing spec; report data/r2-w2/report.md

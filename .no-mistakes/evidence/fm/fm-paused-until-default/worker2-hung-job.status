@@ -1,0 +1,3 @@
+paused [at=1794096485]: e2e.sh running in background (log .e2e/e2e.log); waiting for completion until 2026-11-08T00:18Z
+resolved [at=1794097114]: e2e.sh wait ended - diagnosed as a hang (sleep 100000 at e2e.sh:6), job killed
+blocked [at=1794097121]: report written (e2e FAIL: hangs at e2e.sh:6 sleep 100000); completion gate refused: 'origin owncap-scout is not owned by the active home /tmp/fm-lab.QjiUTe' - need firstmate to attest empty inventory
