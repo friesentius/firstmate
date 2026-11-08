@@ -1094,8 +1094,8 @@ test_ship_and_scout_teach_validation_round_pause() {
       "$kind brief did not exclude only the pipeline drive call from the 10-minute own-job cap"
     assert_grep "never background a command in order to poll it, except your own long job under the pause rule above" "$brief" \
       "$kind brief's Waiting section did not allow backgrounding a long own job"
-    assert_grep "That own long job waits in ONE blocking \`until\` loop on its completion, bounded at 10 minutes rather than the harness ceiling" "$brief" \
-      "$kind brief's Waiting section did not bound the own-job wait loop at 10 minutes"
+    assert_grep "That own long job waits in ONE blocking \`until\` loop on its completion, bounded to return by its declared \`until\` rather than the harness ceiling" "$brief" \
+      "$kind brief's Waiting section did not bound the own-job wait loop to return by its declared until"
     assert_grep 'Firstmate may still raise one first-sight alert' "$brief" \
       "$kind brief incorrectly promised to suppress the first alert"
     assert_grep 'Do not declare active implementation or reasoning as a wait' "$brief" \
